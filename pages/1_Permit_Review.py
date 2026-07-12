@@ -44,22 +44,21 @@ NODE_ORDER = [k for k, _ in STEP_LABELS]
 pipeline_slot = st.empty()
 pipeline_slot.markdown(pipeline_html(PIPELINE_STEPS), unsafe_allow_html=True)
 
-# --- Select a permit ---------------------------------------------------------------------
-render_section("Select a permit awaiting authorisation")
+# ==========================================================================================
+# STAGE 1 — INPUTS. Everything below is what goes IN. Nothing here is a review finding.
+# ==========================================================================================
+render_section("1 \u00b7 Inputs",
+               "The permit as submitted, and the real conditions at the work site")
 
 labels = {
-    p["permit_id"]: f"{p['permit_id']} — {p['title']}"
-    + ("   ⚠️ DEER PARK PATTERN" if scan_permit(p)["deer_park_shape"] else "")
+    p["permit_id"]: f"{p['permit_id']} \u2014 {p['title']}"
+    + ("   \u26a0\ufe0f DEER PARK PATTERN" if scan_permit(p)["deer_park_shape"] else "")
     for p in PERMITS
 }
 
-col_sel, col_run = st.columns([4, 1])
-with col_sel:
-    permit_id = st.selectbox(
-        "Permit", list(labels), format_func=lambda k: labels[k], label_visibility="collapsed"
-    )
-with col_run:
-    run = st.button("Run Review", type="primary", use_container_width=True)
+permit_id = st.selectbox(
+    "Permit awaiting authorisation", list(labels), format_func=lambda k: labels[k]
+)
 
 # Source the permit through whatever system of record is connected. The agents never see the
 # vendor's payload shape — the connector normalises it first. Falls back to local fixtures.
@@ -83,7 +82,13 @@ else:
     st.warning(f"**Structural pre-screen: {pre['defect_count']} defect(s), worst severity "
                f"{pre['worst_severity'].upper()}.**")
 
-# --- REAL external conditions. Not simulated. Live APIs, no key. -------------------------
+# --- REAL external conditions. An INPUT to the review, not an output of it. --------------
+st.markdown("##### Conditions at the work site right now")
+st.caption(
+    "These are **inputs**, not findings. A procedure clause about darkness or wind cannot be judged "
+    "from the permit alone \u2014 it depends on the real world. So the agents are given the real world."
+)
+
 rc = check_permit_against_reality(permit, site)
 cond = rc["conditions"]
 
@@ -112,8 +117,10 @@ else:
 
 if rc.get("findings"):
     st.error(
-        f"**{len(rc['findings'])} finding(s) established by LIVE EXTERNAL DATA — these are facts, "
-        f"not model opinions.**"
+        f"**{len(rc['findings'])} conflict(s) between this permit and the real world.** "
+        f"Established by live external data **before any agent has run** \u2014 these are facts, not "
+        f"model opinions, and they cannot be hallucinations because no model produced them. "
+        f"The agents are handed these as evidence."
     )
     for f in rc["findings"]:
         st.markdown(f"{severity_badge(f['severity'])} &nbsp; **{f['finding']}**",
@@ -160,11 +167,21 @@ with st.expander("View the permit pack as submitted", expanded=False):
         for c in permit["concurrent_permits"]:
             st.markdown(f"- `{c['permit_id']}` [{c['status']}] — {c['description']}")
 
+st.markdown("")
+_, col_run, _ = st.columns([1, 2, 1])
+with col_run:
+    run = st.button("\u25b6  Run the seven-agent review", type="primary",
+                    use_container_width=True)
+
 st.markdown("---")
 
-# --- Run ---------------------------------------------------------------------------------
+# ==========================================================================================
+# STAGE 2 — THE REVIEW. Everything below this line is OUTPUT.
+# ==========================================================================================
 if run:
     require_llm()
+
+    render_section("2 \u00b7 The review", "Seven adversarial agents. A human still decides.")
 
     result = None
     with st.status("Seven agents attacking the permit…", expanded=True) as status:
@@ -198,6 +215,7 @@ if run:
     verdict = result.get("verdict", {}) or {}
     prov = result.get("provenance", {}) or {}
 
+    render_section("3 \u00b7 Recommendation", "Advisory only \u2014 HOLDPOINT authorises nothing")
     render_verdict(verdict)
     render_authorisation_gate()
 
