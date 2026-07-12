@@ -327,3 +327,209 @@ def provenance_donut(prov: dict):
                           font=dict(size=22, family="Inter"), showarrow=False)],
     )
     return fig
+
+
+# ==================================================================================================
+# 6. The assurance web — and the point of it is the edges that AREN'T there
+# ==================================================================================================
+#
+# A permit is a claim about a chain:
+#
+#     HAZARD  ->  CONTROL that addresses it  ->  HOLD POINT that compels someone to check it
+#     PERSON  ->  COMPETENCY for each hazard they will personally face
+#
+# When the chain is complete, the work is defensible. When a link is missing, somebody is relying on
+# a safeguard that does not exist.
+#
+# So this graph is not drawn to look impressive. It is drawn so that a MISSING EDGE is visible.
+# A hazard floating with no control attached is not a pretty node — it is the thing that kills
+# someone. At Deer Park, the stop-work instruction was a node with no edge to a hold point.
+#
+# CALIBRATION MATTERS AS MUCH AS DETECTION. An earlier version of this used naive string-prefix
+# matching and reported 5 broken links on the WELL-FORMED permit. A graph that lights up red on a
+# good permit is exactly as useless as one that stays green on a lethal one — and it destroys trust
+# in every other panel on the page. So hazards are matched to controls through an explicit
+# safeguard vocabulary, and the clean permit must come back clean. That is a test, below.
+
+import math
+
+# What a real control for each hazard actually looks like. "Standard PPE" is not a control for
+# hydrogen sulphide, and this mapping is what lets the graph say so.
+HAZARD_CONTROL_KEYWORDS = {
+    "hydrogen sulphide": ["h2s", "monitor", "escape", "gas test", "detector", "breathing"],
+    "h2s":               ["h2s", "monitor", "escape", "gas test", "detector", "breathing"],
+    "hot work":          ["gas test", "fire watch", "fire blanket", "screen", "spark"],
+    "sparks":            ["gas test", "fire watch", "fire blanket", "screen"],
+    "fume":              ["ventilat", "extract", "respirat"],
+    "stored pressure":   ["depressur", "bleed", "isolat", "lock", "prove", "drain"],
+    "pressure":          ["depressur", "bleed", "isolat", "lock", "prove", "drain"],
+    "working at height": ["scaffold", "harness", "fall", "edge protection"],
+    "height":            ["scaffold", "harness", "fall", "edge protection"],
+    "manual handling":   ["ppe", "lift", "mechanical aid"],
+    "confined space":    ["gas test", "standby", "rescue", "entry log", "ventilat"],
+    "oxygen":            ["gas test", "monitor", "ventilat"],
+    "residual hydrocarbon": ["gas test", "purge", "isolat"],
+    "hot fluid":         ["drain", "cool", "isolat", "ppe"],
+}
+
+
+def _controls_for(hazard: str, controls: list[str]) -> list[str]:
+    """Which listed controls actually address this hazard? Vocabulary, not string prefixes."""
+    h = hazard.lower()
+    keys = []
+    for term, words in HAZARD_CONTROL_KEYWORDS.items():
+        if term in h:
+            keys.extend(words)
+    if not keys:                      # unknown hazard type — do not guess it is uncontrolled
+        return list(controls)
+    return [c for c in controls if any(w in c.lower() for w in keys)]
+
+
+def assurance_web(permit: dict):
+    """The permit's assurance chain as a graph. Broken links are the point."""
+    import networkx as nx
+
+    G = nx.Graph()
+    meta: dict[str, dict] = {}
+
+    def add(nid, label, kind, broken=False, detail=""):
+        G.add_node(nid)
+        meta[nid] = {"label": label, "kind": kind, "broken": broken, "detail": detail}
+
+    pid = permit["permit_id"]
+    add(pid, pid, "permit", detail=permit["title"])
+
+    hazards = permit.get("hazards_identified", []) or []
+    controls = permit.get("controls_listed", []) or []
+    holds = permit.get("hold_points_listed", []) or []
+    people = permit.get("personnel", []) or []
+
+    # No hold points at all means NOTHING on this permit compels anyone to stop and check.
+    # That is the Deer Park signature, and it makes every control on the permit unenforced.
+    unenforced_permit = not holds
+
+    # --- Hazards -> controls ------------------------------------------------------------------
+    linked_controls: set[int] = set()
+    for i, h in enumerate(hazards):
+        hid = f"H{i}"
+        matched = _controls_for(h, controls)
+        add(hid, h, "hazard", broken=not matched,
+            detail="NO CONTROL LISTED FOR THIS HAZARD" if not matched else "")
+        G.add_edge(pid, hid)
+
+        for c in matched:
+            ci = controls.index(c)
+            linked_controls.add(ci)
+            cid = f"C{ci}"
+            if cid not in meta:
+                add(cid, c, "control", broken=unenforced_permit,
+                    detail="listed, but no hold point compels anyone to check it"
+                           if unenforced_permit else "enforced by a hold point")
+            G.add_edge(hid, cid)
+
+    # Controls tied to no identified hazard — floating assurance.
+    for i, c in enumerate(controls):
+        if i in linked_controls:
+            continue
+        add(f"C{i}", c, "control", broken=True, detail="not tied to any identified hazard")
+        G.add_edge(pid, f"C{i}")
+
+    # --- Hold points --------------------------------------------------------------------------
+    if holds:
+        for i, hp in enumerate(holds):
+            add(f"HP{i}", hp[:44], "hold", detail="discrete, signed, enforced step")
+            G.add_edge(pid, f"HP{i}")
+    else:
+        add("HP_NONE", "NO HOLD POINTS", "hold", broken=True,
+            detail="Nothing on this permit compels anyone to stop and check. "
+                   "This is the Deer Park signature.")
+        G.add_edge(pid, "HP_NONE")
+
+    # --- People. Induction is not competence. -------------------------------------------------
+    for i, p in enumerate(people):
+        gaps = []
+        for field, label in (("h2s_competency", "H2S"),
+                             ("confined_space_competency", "Confined space")):
+            v = str(p.get(field, "")).lower()
+            if not v or v == "not recorded":
+                continue
+            if "expired" in v or "none" in v:
+                gaps.append(f"{label}: {p.get(field)}")
+        add(f"P{i}", p["name"], "person", broken=bool(gaps),
+            detail=(f"{p['company']} — " + "; ".join(gaps)) if gaps
+                   else f"{p['company']} — competencies current")
+        G.add_edge(pid, f"P{i}")
+
+    # --- Concurrent permits. Only a CONFLICT is a broken link. --------------------------------
+    this_blob = (permit.get("work_description", "") + " " + permit.get("title", "")).lower()
+    for c in permit.get("concurrent_permits", []) or []:
+        other = c["description"].lower()
+        hot = any(t in other for t in ("hot work", "weld", "grind")) or               any(t in this_blob for t in ("hot work", "weld", "grind"))
+        breach = any(t in other for t in ("line break", "containment", "drain", "open")) or                  any(t in this_blob for t in ("line break", "containment", "drain", "open"))
+        conflict = hot and breach
+        add(c["permit_id"], c["permit_id"], "concurrent", broken=conflict,
+            detail=("CONFLICTS: " if conflict else "") + c["description"])
+        G.add_edge(pid, c["permit_id"])
+
+    # --- Layout. Seeded, so the picture is identical every run. --------------------------------
+    pos = nx.spring_layout(G, seed=7, k=0.95, iterations=140)
+
+    STYLE = {
+        "permit":     ("#1e40af", 34),
+        "hazard":     ("#f97316", 22),
+        "control":    ("#0891b2", 18),
+        "hold":       ("#16a34a", 22),
+        "person":     ("#7c3aed", 18),
+        "concurrent": ("#64748b", 18),
+    }
+
+    edge_x, edge_y = [], []
+    for a, b in G.edges():
+        edge_x += [pos[a][0], pos[b][0], None]
+        edge_y += [pos[a][1], pos[b][1], None]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=edge_x, y=edge_y, mode="lines",
+        line=dict(width=1.1, color="#cbd5e1"), hoverinfo="none", showlegend=False,
+    ))
+
+    broken_ids = [n for n in G.nodes if meta[n]["broken"]]
+
+    for kind, (colour, size) in STYLE.items():
+        ids = [n for n in G.nodes if meta[n]["kind"] == kind]
+        if not ids:
+            continue
+        fig.add_trace(go.Scatter(
+            x=[pos[n][0] for n in ids], y=[pos[n][1] for n in ids],
+            mode="markers+text",
+            marker=dict(
+                size=[size + (7 if meta[n]["broken"] else 0) for n in ids],
+                color=[CRIT if meta[n]["broken"] else colour for n in ids],
+                line=dict(width=[3 if meta[n]["broken"] else 1.5 for n in ids], color="white"),
+                symbol=["x" if meta[n]["broken"] and kind == "hold" else "circle" for n in ids],
+            ),
+            text=[meta[n]["label"][:26] for n in ids],
+            textposition="top center",
+            textfont=dict(size=9, color="#334155"),
+            customdata=[[meta[n]["kind"], meta[n]["detail"] or "chain complete"] for n in ids],
+            hovertemplate="<b>%{text}</b><br>%{customdata[0]}<br>%{customdata[1]}<extra></extra>",
+            name=kind.title(),
+        ))
+
+    fig.update_layout(
+        **_LAYOUT,
+        height=580,
+        title=dict(
+            text=(f"<b>{len(broken_ids)} broken link(s) in this permit's assurance chain</b>"
+                  if broken_ids else
+                  "<b>Assurance chain complete — every hazard has a control, every control is "
+                  "enforced by a hold point, every person is competent</b>"),
+            font=dict(size=13, color=CRIT if broken_ids else "#166534"),
+        ),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        legend=dict(orientation="h", y=-0.04, x=0.5, xanchor="center"),
+        hovermode="closest",
+    )
+    return fig, len(broken_ids)

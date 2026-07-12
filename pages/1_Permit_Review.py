@@ -19,7 +19,7 @@ from core.backlog import scan_permit
 from core.connectors import get_connector, CONNECTORS, DEFAULT_CONNECTOR
 from core.reality import check_permit_against_reality
 from core.charts import (shift_vs_darkness, simops_timeline, structural_similarity,
-                         provenance_donut)
+                         provenance_donut, assurance_web)
 from data.permits import PERMITS, get_permit
 from agents.permit_review.graph import review_permit_stream, STEP_LABELS
 
@@ -160,6 +160,32 @@ if rc.get("findings"):
         st.caption(f"✅ Established by **{f['established_by']}** — a real API, not the model. "
                    f"This finding cannot be a hallucination, because no model produced it.")
         st.markdown("")
+
+# --- The assurance web. The point is the edges that AREN'T there. -------------------------
+render_section("The assurance chain", "A missing edge is a missing safeguard")
+
+web, broken = assurance_web(permit)
+st.plotly_chart(web, use_container_width=True)
+
+if broken:
+    st.error(
+        f"**{broken} broken link(s).** Red nodes are where the chain fails: a hazard with no "
+        f"control, a control nothing enforces, a person without competency for a hazard they will "
+        f"personally face. **At Deer Park, the stop-work instruction was a node with no edge to a "
+        f"hold point.**"
+    )
+else:
+    st.success(
+        "**Assurance chain complete.** Every hazard has a control, every control is enforced by a "
+        "hold point, every person is competent for what they face."
+    )
+
+st.caption(
+    "**What this graph checks, and what it does not.** It traces one chain: hazard → control → "
+    "hold point, and person → competency. A complete chain here does **not** mean the permit is "
+    "safe — isolation adequacy, darkness and SIMOPS are checked separately, above and below. "
+    "A graph that claimed to check everything would be lying."
+)
 
 with st.expander("View the permit pack as submitted", expanded=False):
     st.markdown(f"**Unit**: {permit['unit']} · **Shift**: {permit['shift']} · "
