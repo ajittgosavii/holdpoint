@@ -83,17 +83,26 @@ else:
                f"{pre['worst_severity'].upper()}.**")
 
 # --- REAL external conditions. An INPUT to the review, not an output of it. --------------
-st.markdown("##### Conditions at the work site right now")
-st.caption(
-    "These are **inputs**, not findings. A procedure clause about darkness or wind cannot be judged "
-    "from the permit alone \u2014 it depends on the real world. So the agents are given the real world."
-)
-
 rc = check_permit_against_reality(permit, site)
 cond = rc["conditions"]
+ww = rc.get("work_window") or {}
+dk = rc.get("darkness")
+
+st.markdown("##### Conditions at the work site, for this permit's own work window")
+
+# State the linkage explicitly. This is WHY the live data is here at all: the permit authorises
+# work at a real place on a real date, and two clauses in the site's own H2S standard (darkness,
+# wind direction) cannot be judged from the permit alone. They depend on the world outside it.
+st.info(
+    f"**This permit authorises work at {permit['unit']}, on "
+    f"{ww.get('date') or '(no date on permit)'}, {ww.get('shift', '')}.**\n\n"
+    f"So HOLDPOINT fetches the real sun and wind **for that place, on that date** — because the "
+    f"site's own H2S standard forbids sour work in darkness and requires the wind direction to be "
+    f"confirmed. Neither can be judged from the permit alone."
+)
 
 if rc.get("unavailable"):
-    st.info(
+    st.warning(
         "**Live external conditions unavailable.** HOLDPOINT does not guess the weather — daylight "
         "and wind direction must be confirmed by hand at the work location before containment is "
         "broken."
@@ -101,19 +110,25 @@ if rc.get("unavailable"):
 else:
     lc1, lc2, lc3, lc4 = st.columns(4)
     with lc1:
-        st.metric("Sunset (UTC)", (cond["sunset_utc"] or "—")[11:16])
+        st.metric("Permit's shift (local)", f"{ww.get('start', '?')}–{ww.get('end', '?')}")
     with lc2:
-        st.metric("Sunrise (UTC)", (cond["sunrise_utc"] or "—")[11:16])
+        st.metric("Sunset → sunrise (local)",
+                  f"{dk['sunset_local']}–{dk['sunrise_local'].split(' ')[0]}" if dk else "—")
     with lc3:
-        st.metric("Wind", f"{cond['wind_direction'] or '—'} {cond['wind_speed'] or ''}")
+        st.metric("Shift hours in darkness",
+                  f"{dk['dark_hours']}h / {dk['shift_hours']}h" if dk else "—",
+                  delta=f"{dk['dark_pct']}% dark" if dk else None,
+                  delta_color="inverse" if dk and dk["any_darkness"] else "off")
     with lc4:
-        st.metric("Conditions", cond["forecast"] or "—")
+        st.metric("Wind", f"{cond['wind_direction'] or '—'} {cond['wind_speed'] or ''}",
+                  help=cond["forecast"] or "")
     st.caption(
-        f"🌐 **LIVE DATA — not simulated.** Fetched from `{cond['source']}` for "
-        f"{cond['site_name']} ({cond['lat']}, {cond['lon']}) on {cond['date']}. "
-        f"A procedure clause about darkness or wind cannot be judged from the permit alone — it "
-        f"depends on the real world."
+        f"🌐 **LIVE DATA — not simulated.** Sun and wind fetched from `{cond['source']}` for "
+        f"{cond['site_name']} ({cond['lat']}, {cond['lon']}) on **{cond['date']}** — the permit's "
+        f"own work date. The darkness overlap is **computed** from the permit's shift window in the "
+        f"site's timezone ({site.get('tz', 'n/a')}), not assumed from the word \"night\"."
     )
+
 
 if rc.get("findings"):
     st.error(

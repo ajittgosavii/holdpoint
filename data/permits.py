@@ -32,6 +32,11 @@ PERMITS = [
     # =====================================================================================
     {
         "permit_id": "PTW-2026-0417",
+        # The work date and window. Without these, "is this work in darkness?"
+        # cannot be answered — it is a question about a real place at a real time.
+        "work_date": "2026-07-15",
+        "shift_start": "06:00",
+        "shift_end": "18:00",
         "title": "Turnaround maintenance — Unit 12 sour water stripper area",
         "unit": "Unit 12 — Sour Water Stripper (SWS)",
         "requested_by": "M. Alvarez (Maintenance Supervisor)",
@@ -107,6 +112,11 @@ process fluid: 8,400 ppm. Wind: light and variable. Hours of darkness: N/A (days
     # =====================================================================================
     {
         "permit_id": "PTW-2026-0431",
+        # The work date and window. Without these, "is this work in darkness?"
+        # cannot be answered — it is a question about a real place at a real time.
+        "work_date": "2026-07-15",
+        "shift_start": "06:00",
+        "shift_end": "18:00",
         "title": "Replace pressure gauge on cooling water line, Unit 7",
         "unit": "Unit 7 — Cooling Water",
         "requested_by": "R. Chen (Maintenance Planner)",
@@ -146,6 +156,11 @@ remove, replace, recommission. Hazards: residual pressure. Controls: lock/tag, p
     # =====================================================================================
     {
         "permit_id": "PTW-2026-0428",
+        # The work date and window. Without these, "is this work in darkness?"
+        # cannot be answered — it is a question about a real place at a real time.
+        "work_date": "2026-07-15",
+        "shift_start": "06:00",
+        "shift_end": "18:00",
         "title": "Confined space entry — Vessel V-305 internal inspection",
         "unit": "Unit 3 — Crude Distillation",
         "requested_by": "P. Nakamura (Inspection Lead)",
@@ -195,6 +210,11 @@ record of a Unit 3 specific hazard briefing on file.""",
     # =====================================================================================
     {
         "permit_id": "PTW-2026-0433",
+        # The work date and window. Without these, "is this work in darkness?"
+        # cannot be answered — it is a question about a real place at a real time.
+        "work_date": "2026-07-15",
+        "shift_start": "06:00",
+        "shift_end": "18:00",
         "title": "Hot work — structural weld repair, Unit 12 pipe rack",
         "unit": "Unit 12 — Sour Water Stripper (SWS)",
         "requested_by": "K. Mbeki (Construction Supervisor)",
@@ -241,6 +261,11 @@ H2S 8,400 ppm. Sample point drain on SWS overhead currently OPEN under PTW-2026-
     # =====================================================================================
     {
         "permit_id": "PTW-2026-0436",
+        # The work date and window. Without these, "is this work in darkness?"
+        # cannot be answered — it is a question about a real place at a real time.
+        "work_date": "2026-07-15",
+        "shift_start": "18:00",
+        "shift_end": "06:00",
         "title": "Replace control valve CV-1188 — amine regenerator bottoms",
         "unit": "Unit 11 — Amine Regeneration",
         "requested_by": "H. Lindqvist (Maintenance Planner)",

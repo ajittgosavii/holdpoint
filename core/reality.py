@@ -47,7 +47,7 @@ import json
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 TIMEOUT = 10
 UA = "HOLDPOINT permit-assurance demo (safety research; contact: site admin)"
@@ -188,12 +188,78 @@ def _is_night_shift(permit: dict) -> bool:
     return False
 
 
+def darkness_overlap(permit: dict, site: dict, conditions: Conditions) -> dict | None:
+    """How many hours of THIS permit's shift actually fall after sunset, at THIS site?
+
+    This is the link between the permit and the live data, and it must be computed rather than
+    assumed. "Night shift + sour service = darkness" is a guess. The real question is: for the work
+    window this permit authorises, on the date it authorises it, at this site's coordinates and in
+    this site's timezone — how much of it is dark?
+
+    Sunset comes back in UTC. The shift is in local time. Comparing them without a timezone is the
+    kind of quiet error that produces a confident wrong answer, which is the failure mode this whole
+    product exists to prevent.
+
+    Returns None if the permit does not carry a date and window — in which case we say so rather
+    than inventing one.
+    """
+    date_s = permit.get("work_date")
+    start_s = permit.get("shift_start")
+    end_s = permit.get("shift_end")
+    tz_name = site.get("tz")
+
+    if not (date_s and start_s and end_s and tz_name and conditions.sunset_utc):
+        return None
+
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        return None
+
+    def _local(day: datetime, hhmm: str) -> datetime:
+        h, m = (int(x) for x in hhmm.split(":"))
+        return day.replace(hour=h, minute=m, second=0, microsecond=0, tzinfo=tz)
+
+    day0 = datetime.fromisoformat(date_s)
+    start = _local(day0, start_s)
+    end = _local(day0, end_s)
+    if end <= start:                      # e.g. 18:00 -> 06:00 crosses midnight
+        end = end.replace(day=end.day) + timedelta(days=1)
+
+    sunset = datetime.fromisoformat(conditions.sunset_utc).astimezone(tz)
+    sunrise = datetime.fromisoformat(conditions.sunrise_utc).astimezone(tz)
+    # The sunrise that ENDS this night is the following morning's.
+    next_sunrise = sunrise + timedelta(days=1) if sunrise <= sunset else sunrise
+
+    dark_start, dark_end = sunset, next_sunrise
+    overlap_start = max(start, dark_start)
+    overlap_end = min(end, dark_end)
+    dark_hours = max(0.0, (overlap_end - overlap_start).total_seconds() / 3600.0)
+    shift_hours = (end - start).total_seconds() / 3600.0
+
+    return {
+        "shift_local": f"{start:%Y-%m-%d %H:%M} – {end:%H:%M} {tz_name}",
+        "sunset_local": f"{sunset:%H:%M}",
+        "sunrise_local": f"{next_sunrise:%H:%M} (next day)",
+        "shift_hours": round(shift_hours, 1),
+        "dark_hours": round(dark_hours, 1),
+        "dark_pct": round(100 * dark_hours / shift_hours) if shift_hours else 0,
+        "any_darkness": dark_hours > 0,
+    }
+
+
 def check_permit_against_reality(permit: dict, site: dict, date: str | None = None) -> dict:
     """Compare the permit against verifiable external facts.
 
+    The conditions are fetched for the PERMIT'S OWN WORK DATE at the SITE'S OWN COORDINATES — not
+    for "today" and not for a generic location. That linkage is the whole point: the permit
+    authorises work at a real place on a real date, and some of its clauses can only be judged
+    against what the sun and the wind are actually doing there, then.
+
     Returns findings that are FACTS, not model opinions — each carries the API that established it.
     """
-    c = get_conditions(site, date)
+    c = get_conditions(site, date or permit.get("work_date"))
     findings: list[dict] = []
 
     if not c.available:
@@ -211,23 +277,39 @@ def check_permit_against_reality(permit: dict, site: dict, date: str | None = No
     sour = _is_sour_service(permit)
     night = _is_night_shift(permit)
 
-    # --- Clause SP-H2S-004 2.5 — darkness -------------------------------------------------
-    if sour and night and c.sunset_utc:
+    # --- Clause SP-H2S-004 2.5 — darkness. COMPUTED, not assumed. -------------------------
+    overlap = darkness_overlap(permit, site, c)
+
+    if sour and overlap is None:
+        findings.append({
+            "code": "work_window_unknown",
+            "severity": "medium",
+            "finding": (
+                "This permit breaks containment on a sour (H2S) system, but does not carry a work "
+                "DATE and shift window. Whether the work falls in darkness therefore cannot be "
+                "determined — and HOLDPOINT will not guess. The authoriser must establish it."
+            ),
+            "procedure_clause": "Work on sour systems shall not proceed during hours of darkness.",
+            "procedure_doc": "SP-H2S-004 — Hydrogen Sulphide (H2S) Control Standard, clause 2.5",
+            "established_by": "absence of data on the permit (not a model opinion)",
+            "fact_not_opinion": True,
+        })
+    elif sour and overlap and overlap["any_darkness"]:
         findings.append({
             "code": "sour_work_in_darkness",
             "severity": "critical",
             "finding": (
-                f"This permit breaks containment on a sour (H2S) system on a NIGHT shift "
-                f"({permit.get('shift')}). Real sunset at this site on {c.date} is "
-                f"{c.sunset_utc} UTC and sunrise is {c.sunrise_utc} UTC — the scheduled work window "
-                f"falls in darkness."
+                f"{overlap['dark_hours']} of this permit's {overlap['shift_hours']} shift hours "
+                f"({overlap['dark_pct']}%) fall after sunset. The permit authorises breaking "
+                f"containment on a sour (H2S) system across {overlap['shift_local']}. At this site "
+                f"on this date, sunset is {overlap['sunset_local']} and sunrise is "
+                f"{overlap['sunrise_local']} local."
             ),
-            "procedure_clause": (
-                "Work on sour systems shall not proceed during hours of darkness."
-            ),
+            "procedure_clause": "Work on sour systems shall not proceed during hours of darkness.",
             "procedure_doc": "SP-H2S-004 — Hydrogen Sulphide (H2S) Control Standard, clause 2.5",
-            "established_by": "api.sunrise-sunset.org (real, live)",
+            "established_by": "api.sunrise-sunset.org (real, live) + the permit's own work window",
             "fact_not_opinion": True,
+            "computation": overlap,
         })
 
     # --- Clause SP-H2S-004 3.1 — wind direction and escape route --------------------------
@@ -277,6 +359,13 @@ def check_permit_against_reality(permit: dict, site: dict, date: str | None = No
         "unavailable": False,
         "sour_service": sour,
         "night_shift": night,
+        "darkness": overlap,
+        "work_window": {
+            "date": permit.get("work_date"),
+            "start": permit.get("shift_start"),
+            "end": permit.get("shift_end"),
+            "shift": permit.get("shift"),
+        },
     }
 
 
