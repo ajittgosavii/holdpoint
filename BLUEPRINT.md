@@ -3,7 +3,11 @@
 > Complete architectural, functional and commercial description of HOLDPOINT, structured for
 > import into **Infosys Topaz Fabric** as an agentic solution asset.
 >
-> Repository: `https://github.com/ajittgosavii/holdpoint` · Blueprint generated 2026-07-11 · commit `3e23559`
+> Repository: `https://github.com/ajittgosavii/holdpoint` · Blueprint updated 2026-07-11 · commit `9fe4618`
+>
+> **Status at a glance:** structure, safety layers and UI are **verified by test**. The **live LLM
+> path has not yet been exercised** (no API key in the build environment) — so the agents' reasoning
+> quality is *unproven*. See §10. Do not demo until that is closed.
 
 ---
 
@@ -20,12 +24,21 @@ solution:
   primary_industries: [Refining & Chemicals, Mining & Metals]
   hypothesis_industries: [Utilities (T&D)]          # NOT verified — see §9
   not_applicable: [Business Services, Retail]        # stated plainly; no permit-to-work exists
-  pattern: Multi-agent adversarial review + RAG precedent matching + programmatic provenance
+  pattern: Multi-agent adversarial review + incident-precedent retrieval + programmatic provenance
   interface: Streamlit multipage
   language: Python 3.11+
-  loc: ~3,700
+  loc: ~3,800
   buyer: COO / VP Operations (conduct-of-operations) — NOT the CIO
   budget_line: Operations (mandatory gate), not innovation (discretionary pilot)
+
+deployment:
+  target: Streamlit Cloud
+  repo: ajittgosavii/holdpoint
+  branch: main
+  entrypoint: app.py
+  secrets: OPENAI_API_KEY (required) · ANTHROPIC_API_KEY (optional — enables automatic failover)
+  local: create .env with OPENAI_API_KEY=... (gitignored); load_secrets() resolves
+         .env -> Streamlit secrets -> environment
 ```
 
 ### One-line description
@@ -131,7 +144,8 @@ Infosys can be that answer — converting a competitive threat into distribution
 │                          real procedure corpus. CODE, not a prompt.    │
 │  core/backlog.py      ← Deterministic structural pre-screen            │
 │  core/domains.py      ← Industry packs: refining · mining · utilities  │
-│  data/incidents.py    ← CSB · Cullen · ICMM corpus (RAG precedent)     │
+│  core/vectorstore.py  ← Retrieval over the incident corpus             │
+│  data/incidents.py    ← CSB · Cullen · ICMM major-accident corpus      │
 │  data/procedures.py   ← Ground truth every control must trace to       │
 └──────────────────────────────┬────────────────────────────────────────┘
                                │
@@ -157,9 +171,12 @@ agents without touching agent code.
 | `core/prompts.py` | 8 adversarial role prompts |
 | `core/domains.py` | Industry packs + evidence status |
 | `core/llm.py` | Model factory, 4 tiers, provider failover |
+| `core/vectorstore.py` | TF-IDF retrieval over the incident corpus |
+| `core/ui.py` | Sidebar, industry switcher, verdict banner, citation badges, credential resolution |
 | `data/procedures.py` | Site procedure corpus — the ground truth |
 | `data/permits.py` | Permit packs, incl. the Deer Park pattern |
 | `data/incidents.py` | Major-accident corpus |
+| `BLUEPRINT.md` | This document |
 
 ---
 
@@ -236,6 +253,26 @@ declare when its match is illustrative.
 
 > A safety tool that cites a fabricated fatality to make its point has forfeited the right to be
 > believed about anything else it says.
+
+### 6.5 Retrieval matches on STRUCTURE, not on subject matter
+
+`_retrieve_incidents()` builds its query from **the specialists' findings**, not from the permit
+text. This is the difference between a weak match and one that stops a shift:
+
+| Match on… | Produces |
+|---|---|
+| **Subject matter** (permit text) | *"Both involve H₂S."* — true, useless, and retrieves the wrong lesson |
+| **Structural failure shape** (findings) | *"Over-broad scope, stop-work instruction present in prose but not enforced as a hold point, two contracting companies, live toxic inventory adjacent."* — the Deer Park signature |
+
+**An honest threshold.** Below `RETRIEVAL_THRESHOLD = 8` incidents the system passes the **full
+corpus** and says so on screen, because a top-k over six documents adds nothing and only risks
+dropping the one that mattered. Above it, retrieval runs — because a real client corpus is hundreds
+of investigation reports and cannot fit in a prompt.
+
+> **A correction we made to ourselves.** An earlier version of this blueprint and the README claimed
+> "RAG over the corpus" while the code injected the whole corpus and the retrieval module was dead.
+> That was an overclaim, and it was fixed rather than quietly left in place. A product whose central
+> argument is *"verify your evidence"* does not get to be sloppy about its own.
 
 ---
 
@@ -346,19 +383,45 @@ what the human sees **and** shortens the queue. Turnaround days are extraordinar
 
 ## 10. Verification Status
 
-**Verified by test:**
-- ✅ Provenance verifier **rejects a hallucinated control**, a paraphrase, and an empty citation;
-  accepts a genuine procedure quote and downgrades confidence on failures
-- ✅ Backlog scanner **finds the Deer Park permit** (10 defects) and **does not false-positive** the
-  well-formed permit
-- ✅ The buried safeguard is recovered verbatim from the permit prose
-- ✅ 8 LangGraph nodes compile; 8/8 agent prompts build for all 3 industry packs
-- ✅ **12/12 page × industry-pack combinations render**
+The distinction between *"the tests pass"* and *"the product works"* is the whole discipline of this
+project. Here it is, without softening.
 
-**NOT verified:**
-- ⚠️ **The live LLM path.** No API key in the build environment — the *structure*, the *provenance
-  layer* and the *scanner* are proven; the **quality of the agents' actual reasoning is not.**
-  Add a key and run before demoing.
+### ✅ Verified by test
+
+| # | What was proven | How |
+|---|---|---|
+| 1 | Provenance verifier **rejects a hallucinated control**, a paraphrase of a real rule, and an empty citation — and **accepts** a genuine procedure quote | Unit test. A fabricated sentence (*"…shall record the ambient temperature in the site logbook…"*) returns `UNVERIFIED` and forces `confidence → low` |
+| 2 | Backlog scanner **finds the Deer Park permit** (10 defects) and **does not false-positive** the well-formed permit | A reviewer that flags everything is as useless as one that flags nothing — the negative case matters as much as the positive |
+| 3 | The buried safeguard is **recovered verbatim** from the permit prose | *"…prior to opening the line the crew should stop and obtain an operator to be present at the flange…"* |
+| 4 | 8 LangGraph nodes compile; **8/8 agent prompts build for all 3 industry packs**; every prompt carries the two overriding rules | Assertion on `NEVER INVENT A CONTROL` and `YOU DO NOT AUTHORISE ANYTHING` |
+| 5 | **12/12 page × industry-pack combinations render** | Streamlit `AppTest` |
+| 6 | Incident corpus integrity: every VERIFIED entry carries a source URL; every ILLUSTRATIVE entry is explicitly labelled | Assertion — cannot silently ship an unlabelled fake fatality |
+
+### ⚠️ NOT verified — the gap that matters
+
+**The live LLM path has never been run.** There was no API key in the build environment, so:
+
+- The *structure*, the *provenance layer*, the *scanner* and the *UI* are proven.
+- **The quality of the agents' actual reasoning is not.**
+
+Specifically unproven, and each is a demo-critical question:
+
+1. Does the **Hold Point Enforcer** actually find the buried stop-work sentence in PTW-2026-0417?
+   *The entire demo hangs on this single moment.*
+2. Does the **Scope Decomposer** correctly split the five bundled tasks?
+3. Does the **Supervisor** reach `REJECT` on the Deer Park permit and `AUTHORISE` on the clean one —
+   i.e. is it *calibrated*, or does it just flag everything?
+4. Do the agents produce **verifiable quotes**, or do they paraphrase (in which case the provenance
+   layer will correctly flag them UNVERIFIED and the review will look weak)?
+
+> **Do not demo until this is closed.** If the agents produce mush, none of the architecture matters.
+> Add `OPENAI_API_KEY` to a local `.env` (or Streamlit Cloud secrets) and run PTW-2026-0417.
+
+### ⚠️ Also open
+
+- **The competitive scan is incomplete** (§3). Cority, Avetta, ISN, Honeywell, eVision and SAP were
+  never scanned. If one already ships permit *review* reasoning — as opposed to a permit *form* —
+  the whitespace claim weakens and we need to know before it is made on stage.
 
 ---
 
@@ -383,7 +446,77 @@ first** with IOGP, OSHA and EEI contractor-fatality data before selling into it.
 
 ---
 
-## 12. Topaz Fabric Import Summary
+## 12. The Three-Minute Demo
+
+The demo is the product. Structure it so the room feels the problem before it sees the software.
+
+### 0:00–0:35 — The sentence (no software on screen)
+
+> *"On 10 October 2024, two contract workers opened a hydrogen sulphide line at the Deer Park
+> refinery. Twenty-seven thousand pounds of H₂S was released. Both of them died.*
+>
+> *In February this year the Chemical Safety Board published its final report. It found the permit
+> covered multiple jobs with varying hazards and no clear hold points. And it found this —*
+>
+> *'Workers overlooked a written instruction to stop work and obtain an operator's presence before
+> opening the hydrogen sulfide piping.'*
+>
+> *The instruction was already on the permit. It was written down. Somebody read past it."*
+
+**Pause.** Do not fill the silence.
+
+### 0:35–1:00 — The insight
+
+> *"Every AI product in this space helps you WRITE a better permit. Enablon's ships today — it checks
+> your description quality and recommends hazards. But the description wasn't poor. The hazard wasn't
+> missing. The safeguard was already there.*
+>
+> *What was missing was somebody whose only job was to attack the finished permit and refuse to let
+> it through."*
+
+### 1:00–2:15 — The demo. Permit Review → PTW-2026-0417
+
+Show, in this order — the order is the argument:
+
+1. **The permit as submitted.** Five bundled jobs. Hold points: **NONE**. Let them see it.
+2. **Run the review.** Seven agents.
+3. **Stop on the Hold Point Enforcer.** It has pulled the buried sentence out of the narrative —
+   *"prior to opening the line the crew should stop and obtain an operator to be present at the
+   flange"* — and rewritten it as an enforced, signed hold point. **This is the moment. Let it land.**
+4. **The verdict: REJECT.** Not a warning. A refusal.
+5. **The citation badges.** Every control traced to a real procedure, verified *by code*. Say:
+   *"An AI that invents a safety control has manufactured false assurance inside the one system built
+   to prevent it. So we don't ask the model to be honest — we check."*
+6. **The precedent match.** *"This permit shares four structural features with the permit at Deer
+   Park."*
+
+### 2:15–2:45 — The business case. Backlog Scan
+
+> *"Now run it over permits that were already authorised, worked and closed. One in five carries the
+> same structural signature. Every one of those is an incident that didn't happen because somebody got
+> lucky.*
+>
+> *And if that number came back zero, we'd tell you the product has no case here. A test that can't
+> fail proves nothing."*
+
+### 2:45–3:00 — Close with the limits, not the claims
+
+> *"It would not have prevented the Deer Park root cause — that was equipment mis-identification, and
+> the permit failures were contributing. The slice of field safety that lives inside documents is
+> real, and it's a minority of the harm. Refining and mining are evidenced; utilities is a hypothesis
+> and we label it as one.*
+>
+> *A permit cannot be issued without passing through this gate. That's why it survives contact with
+> an operations budget — and why it doesn't die in the pilot graveyard with everything else."*
+
+**Why closing on limits wins.** Every other team closes on claims. Closing on what your product
+*cannot* do — in a safety context, in front of people who know these industries — reads as
+credibility, not weakness. It is also the only close that survives Q&A, because you have already said
+the thing they were about to ask.
+
+---
+
+## 13. Topaz Fabric Import Summary
 
 ```yaml
 asset_type: agentic_solution
