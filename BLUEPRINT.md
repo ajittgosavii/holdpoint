@@ -3,11 +3,13 @@
 > Complete architectural, functional and commercial description of HOLDPOINT, structured for
 > import into **Infosys Topaz Fabric** as an agentic solution asset.
 >
-> Repository: `https://github.com/ajittgosavii/holdpoint` · Blueprint updated 2026-07-11 · commit `9fe4618`
+> Repository: `https://github.com/ajittgosavii/holdpoint` · Blueprint updated 2026-07-12 · commit `23b1d96`
 >
-> **Status at a glance:** structure, safety layers and UI are **verified by test**. The **live LLM
-> path has not yet been exercised** (no API key in the build environment) — so the agents' reasoning
-> quality is *unproven*. See §10. Do not demo until that is closed.
+> **Status at a glance:** structure, safety layers, connectors, live-data layer, visuals and UI are
+> **verified by test** (15/15 page renders, provenance verifier rejects hallucinated controls,
+> chart calibration asserted). The **seven-agent LLM path has now been run end-to-end on Streamlit
+> Cloud** and returns a coherent REJECT on the Deer Park permit — see §13 for exactly what remains
+> unproven.
 
 ---
 
@@ -18,18 +20,27 @@ solution:
   id: holdpoint
   name: HOLDPOINT — Adversarial Permit-to-Work Assurance
   tagline: The adversary at the permit gate.
-  version: 0.1.0
-  maturity: working prototype — structure and safety layers verified; live LLM path not yet exercised
+  version: 0.2.0
+  maturity: working prototype — LLM path exercised; agent-quality evaluation not yet formalised
   domain: Operational Safety / Control of Work / Conduct of Operations
   primary_industries: [Refining & Chemicals, Mining & Metals]
-  hypothesis_industries: [Utilities (T&D)]          # NOT verified — see §9
+  hypothesis_industries: [Utilities (T&D)]          # NOT verified — see §12
   not_applicable: [Business Services, Retail]        # stated plainly; no permit-to-work exists
-  pattern: Multi-agent adversarial review + incident-precedent retrieval + programmatic provenance
-  interface: Streamlit multipage
+  pattern: >
+    Multi-agent adversarial review + programmatic provenance + live external-fact grounding
+    + incident-precedent retrieval + system-of-record layering
+  interface: Streamlit multipage (5 pages)
   language: Python 3.11+
-  loc: ~3,800
+  loc: ~5,800
   buyer: COO / VP Operations (conduct-of-operations) — NOT the CIO
   budget_line: Operations (mandatory gate), not innovation (discretionary pilot)
+
+capabilities:
+  agents: 7                       # 8 prompt roles; Supervisor acts twice (plan + verdict)
+  industry_packs: 3               # refining (verified) · mining (verified) · utilities (HYPOTHESIS)
+  system_of_record_connectors: 4  # Enablon · SAP WCM · IBM Maximo · local — SIMULATED (see §7)
+  live_external_apis: 2           # api.sunrise-sunset.org · api.weather.gov — REAL, no key (see §8)
+  visuals: 6                      # each renders a computed fact, none decoration (see §9)
 
 deployment:
   target: Streamlit Cloud
@@ -39,6 +50,8 @@ deployment:
   secrets: OPENAI_API_KEY (required) · ANTHROPIC_API_KEY (optional — enables automatic failover)
   local: create .env with OPENAI_API_KEY=... (gitignored); load_secrets() resolves
          .env -> Streamlit secrets -> environment
+  dependencies_of_note: networkx (assurance-web layout) — deploy will 500 without it
+  network_egress: required. The app makes real outbound calls to the two public APIs above.
 ```
 
 ### One-line description
@@ -129,29 +142,46 @@ Infosys can be that answer — converting a competitive threat into distribution
 ## 4. Architecture
 
 ```
-┌──────────────────────── STREAMLIT UI ─────────────────────────────────┐
-│   Permit Review    │    Backlog Scan    │    Incident Precedent       │
-└──────────┬─────────┴──────────┬─────────┴─────────────┬───────────────┘
-           │                    │                       │
-┌──────────▼────────────────────▼───────────────────────▼───────────────┐
-│                    LangGraph — 8 nodes, sequential                     │
-│  plan → scope → hazards → hold_points → competency → isolation/SIMOPS │
-│       → precedent → verdict                                            │
-└──────────────────────────────┬────────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼────────────────────────────────────────┐
-│  core/provenance.py   ← THE GATE. Verifies every citation against the  │
-│                          real procedure corpus. CODE, not a prompt.    │
-│  core/backlog.py      ← Deterministic structural pre-screen            │
-│  core/domains.py      ← Industry packs: refining · mining · utilities  │
-│  core/vectorstore.py  ← Retrieval over the incident corpus             │
-│  data/incidents.py    ← CSB · Cullen · ICMM major-accident corpus      │
-│  data/procedures.py   ← Ground truth every control must trace to       │
-└──────────────────────────────┬────────────────────────────────────────┘
-                               │
-┌──────────────────────────────▼────────────────────────────────────────┐
-│      GPT-4o (primary)  →  automatic failover  →  Claude Sonnet         │
-└───────────────────────────────────────────────────────────────────────┘
+        SYSTEM OF RECORD                          THE REAL WORLD
+  Enablon · SAP WCM · Maximo                api.sunrise-sunset.org
+      (SIMULATED — §7)                      api.weather.gov (NOAA)
+              │                                (REAL, no key — §8)
+              │  permit OUT                            │  sun + wind
+              │  findings BACK IN                      │  for THIS permit's
+              ▼                                        ▼  date & coordinates
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     core/connectors.py — NORMALISE                        │
+│   Every vendor names things differently. The agents see ONE shape.        │
+│   Round-trip tested lossless: a dropped field is a defect that LOOKS      │
+│   like a clean review.                                                    │
+└───────────────────────────────┬──────────────────────────────────────────┘
+                                │  canonical permit + real-world facts
+┌───────────────────────────────▼──────────────────────────────────────────┐
+│                     LangGraph — 8 nodes, streamed                         │
+│  plan → scope → hazards → hold_points → competency → isolation/SIMOPS     │
+│       → precedent → verdict          (UI pipeline advances on REAL        │
+│                                       node completion, not a timer)       │
+└───────────────────────────────┬──────────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼──────────────────────────────────────────┐
+│  core/provenance.py  ← THE GATE. Verifies every citation against the real │
+│                        procedure corpus. CODE, not a prompt.              │
+│  core/reality.py     ← Facts from live APIs. BYPASS the provenance check, │
+│                        because no model produced them — nothing to fake.  │
+│  core/backlog.py     ← Deterministic structural pre-screen                │
+│  core/charts.py      ← 6 visuals, each a computed fact (§9)               │
+│  core/domains.py     ← Industry packs: refining · mining · utilities      │
+│  data/incidents.py   ← CSB · Cullen · ICMM major-accident corpus          │
+│  data/procedures.py  ← Ground truth every control must trace to           │
+└───────────────────────────────┬──────────────────────────────────────────┘
+                                │
+┌───────────────────────────────▼──────────────────────────────────────────┐
+│         GPT-4o (primary)  →  automatic failover  →  Claude Sonnet         │
+└──────────────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+                    HUMAN AUTHORISER DECIDES
+              (HOLDPOINT authorises nothing, ever)
 ```
 
 **The agent graph contains no industry-specific logic.** Swapping the site pack re-targets all seven
@@ -165,6 +195,7 @@ agents without touching agent code.
 | `pages/1_Permit_Review.py` | The core product: 7 agents attack a permit |
 | `pages/2_Backlog_Scan.py` | The business case: count the Deer-Park-shaped permits |
 | `pages/3_Incident_Precedent.py` | The corpus, with verified/illustrative rigidly separated |
+| `pages/4_Connections.py` | System-of-record layering, the normalisation problem, write-back |
 | `agents/permit_review/graph.py` | 8-node LangGraph + provenance wiring |
 | `core/provenance.py` | **The most important file.** Programmatic citation verification |
 | `core/backlog.py` | Deterministic structural defect scanner |
@@ -172,6 +203,9 @@ agents without touching agent code.
 | `core/domains.py` | Industry packs + evidence status |
 | `core/llm.py` | Model factory, 4 tiers, provider failover |
 | `core/vectorstore.py` | TF-IDF retrieval over the incident corpus |
+| `core/connectors.py` | **System-of-record adapters** (Enablon / SAP WCM / Maximo) + lossless normalisation (§7) |
+| `core/reality.py` | **Live external APIs** — real sun and wind, and the computed darkness overlap (§8) |
+| `core/charts.py` | **6 visuals**, each rendering a computed fact (§9) |
 | `core/ui.py` | Sidebar, industry switcher, verdict banner, citation badges, credential resolution |
 | `data/procedures.py` | Site procedure corpus — the ground truth |
 | `data/permits.py` | Permit packs, incl. the Deer Park pattern |
@@ -276,7 +310,186 @@ of investigation reports and cannot fit in a prompt.
 
 ---
 
-## 7. The Metric That Decides the Business Case
+## 7. Layering: HOLDPOINT Stands in FRONT of the System of Record
+
+**HOLDPOINT does not replace your permit system. It reads the permit out of it, attacks it, and
+writes the findings and hold points back in.**
+
+### Why layering is the strategy, not a compromise
+
+Building a rival EHS suite means asking a refinery to rip out the system holding its permits, its
+e-signatures, its audit trail and its regulator-facing evidence. That is a multi-year,
+politically brutal sale, and **challengers do not win rip-and-replace wars.** Worse, an SI that
+already implements Enablon would be torching services revenue to chase product revenue it is not
+structured to capture.
+
+So the incumbent becomes a **substrate, not an enemy** — and HOLDPOINT works *better* where Enablon
+exists, because a structured digital permit is easier to reason over than a paper one.
+
+**And a channel opens.** Enablon's Permit Advisor created a problem for *every other vendor*.
+Sphera, Cority, eVision, Honeywell and SAP all now need an answer to it, and none wants to build an
+agentic reasoning stack from scratch. Infosys can be that answer — converting a competitive threat
+into distribution.
+
+### The real integration work is NORMALISATION, and the demo shows it
+
+| HOLDPOINT canonical | Enablon | SAP WCM | IBM Maximo |
+|---|---|---|---|
+| `work_description` | `workOrderDescription` | `LTXT` | `description_longdescription` |
+| `permit_id` | `permitNumber` | `WCMKEY` | `wonum` |
+| `hold_points_listed` | `holdPoints[].description` | `HALTEPUNKT[].TXT` | `wosafetyplan.holdpoint[]` |
+
+The API call is trivial. The work is that the agents must **never** see any of this — they see one
+canonical shape, and the connector earns it. **Add a system of record → write one adapter. The
+agents do not change.**
+
+### Lossless mapping is TESTED, not assumed
+
+`roundtrip_check()` proves canonical → vendor-native → canonical returns exactly what went in.
+**4 connectors × 5 permits = 20/20 lossless.**
+
+This is not ceremony. A silently lossy field map means the agents review a permit that is **missing
+a hazard, a person, or a concurrent permit — and confidently declare it safe.** A dropped field is a
+defect that *looks like a clean review*, which is the most dangerous kind. If a mapping goes lossy,
+the page refuses it in red.
+
+### Write-back — and what it deliberately does NOT do
+
+Findings are posted back onto the permit and the permit is set to **HELD pending closeout**. It does
+**not** authorise, and it does **not** close findings. It only guarantees a human cannot decide
+*without seeing this*.
+
+> ⚠️ **HONESTY: the connectors are SIMULATED.** No network call is made. The vendor payload shapes
+> are *representative* — realistic in structure and naming so the normalisation problem can be shown
+> — but they are **not documented API schemas**. Real integration needs auth per vendor per tenant,
+> the versioned API surface with real field *semantics*, a field map signed off by the client's
+> control-of-work SME, rate limits and idempotency for a turnaround's hundreds of permits a day, and
+> **write-back permissions — the hardest approval in the programme**, because a system that can
+> annotate or block a live safety record is privileged. The page says all of this, in red, at the
+> top. Pretending otherwise would be exactly the overclaim this product exists to prevent.
+>
+> **This is also the Infosys revenue argument**: the connector work is the largest single item in
+> Phase 1, and it is why the SI pull-through exceeds the AI build.
+
+---
+
+## 8. Reality Check: The Agents Reason Over the Actual World
+
+**Everything else in this demo is fixture data. `core/reality.py` is not.** It reaches the real
+internet — **no key, no auth** — and fetches real facts:
+
+- **api.sunrise-sunset.org** — real sunrise, sunset, civil twilight
+- **api.weather.gov** (NOAA/NWS) — real forecast wind direction and speed
+
+### Why this is a different CLASS of finding
+
+The site's H2S standard contains two clauses that **no document can satisfy on its own**:
+
+> *"Work on sour systems shall not proceed during hours of darkness."*
+> *"The wind direction shall be confirmed at the work location immediately before containment is
+> broken, and the escape route briefed to all parties."*
+
+An agent reading the permit can tell you the clause **exists**. It cannot tell you the clause is
+**satisfied** — that depends on the sun and the wind, facts that live *outside every document in the
+system*. So HOLDPOINT goes and gets them, for **the permit's own work date at the site's own
+coordinates**.
+
+### The darkness overlap is COMPUTED, not assumed
+
+"Night shift + sour service = darkness" is a guess dressed as a finding. The real question is how
+many hours of *this* shift, on *this* date, at *this* site, fall after sunset. Permits therefore
+carry `work_date` / `shift_start` / `shift_end`, and site packs carry a **timezone** — because
+sunset returns in UTC and the shift is local, and comparing them without a timezone is the quiet
+kind of error that produces a *confident wrong answer*.
+
+> **PTW-2026-0436:** *"9.6 of this permit's 12.0 shift hours (80%) fall after sunset. The permit
+> authorises breaking containment on a sour (H2S) system across 2026-07-15 18:00–06:00
+> America/Chicago. Sunset is 20:23, sunrise 06:29 next day, local."*
+>
+> Day-shift permits correctly compute **0h / 0%**. The check stays silent where it should.
+
+**These findings bypass the provenance check — because no model produced them.** There is nothing to
+fabricate. They are simply true. On stage, this is the moment the system stops being *an LLM with
+opinions* and becomes something that *checks reality against a rule*.
+
+### If the permit has no date, that is ITSELF a finding
+
+A sour-service permit with no work window raises `work_window_unknown`. HOLDPOINT does not guess —
+it tells the authoriser to establish it.
+
+### Failure policy — as important as the feature
+
+If an API is unreachable, HOLDPOINT reports conditions **UNAVAILABLE** and tells the authoriser to
+confirm daylight and wind by hand. **It never invents weather.** In a system whose entire argument is
+*"do not fabricate a safeguard"*, fabricating the wind would be self-refuting.
+
+> **Known limit:** `api.weather.gov` is **US-only**. All three site packs use US coordinates. A
+> non-US deployment needs a different weather source.
+
+---
+
+## 9. Visuals: Six Charts, Each a Computed Fact
+
+A chart that looks impressive but encodes nothing is **a form of false assurance** — it makes a
+reviewer feel informed without informing them. In a safety tool that is not a style question. So
+each visual exists because a specific finding is hard to grasp as a sentence and obvious as a
+picture.
+
+| # | Visual | What it makes legible |
+|---|--------|----------------------|
+| 1 | **Shift vs darkness** | The permit's work bar drawn inside the real night band. *"9.6 of 12 hours"* is a number; seeing the red bar sit in the black band is a fact you cannot argue with |
+| 2 | **SIMOPS timeline** | A conflict is a statement about **time** — two permits live at once. Text hides that; a timeline does not |
+| 3 | **Assurance web** | The chain: hazard → control → hold point, and person → competency. **The point is the edges that AREN'T there.** At Deer Park, the stop-work instruction was a node with no edge to a hold point |
+| 4 | **Structural similarity** | The central claim, *measured*: what fraction of each accident's failure shape is present in this permit |
+| 5 | **Provenance donut** | How much of the review traces to a real procedure. The amber slice — what could **not** be traced — is shown, not hidden |
+| 6 | **Defect matrix** | The backlog metric: permits × defect types |
+
+### Calibration matters as much as detection — and the first web FAILED it
+
+The assurance web's first version used naive string-prefix matching and reported **5 broken links on
+the well-formed permit**.
+
+**A graph that lights up red on a good permit is exactly as useless as one that stays green on a
+lethal one** — and worse, it destroys trust in every other panel on the page. Same failure mode as a
+reviewer who flags everything.
+
+So hazards are now matched to controls through an explicit **safeguard vocabulary** (*"Standard PPE"
+is not a control for hydrogen sulphide, and the graph says so*), and the clean permit is **asserted
+in test** to come back clean.
+
+Verified:
+
+| Permit | Assurance chain |
+|---|---|
+| PTW-2026-0431 (well-formed) | **CLEAN — 0 broken links** |
+| PTW-2026-0417 (Deer Park) | **11 broken links** |
+
+Fixing the calibration also surfaced a defect that was never deliberately planted: **PTW-2026-0417
+lists HOT WORK as a hazard with no control at all** — no gas test, no fire watch. The web found it
+because the edge simply is not there.
+
+### Structural similarity is measured on SHAPE, not subject
+
+*"Both involve H2S"* is subject matter — a weak match that retrieves the wrong lesson. *"Both are one
+broad permit covering multiple jobs, with the stop-work instruction present in prose but never
+enforced"* is failure **shape**, and it is the match that stops a shift.
+
+- PTW-2026-0417 → **100% match to Deer Park**
+- PTW-2026-0431 (clean) → **0% against everything**
+
+Ties are broken on **depth** of match (5 shared features beats 3), so a thin-pattern accident cannot
+outrank Deer Park merely by having fewer boxes to tick.
+
+### Each visual states its own scope
+
+The assurance web says explicitly: it traces hazard → control → hold point and person → competency.
+**A complete chain there does NOT mean the permit is safe** — isolation adequacy, darkness and SIMOPS
+are checked separately. That is why PTW-2026-0436 shows a complete chain *and* a critical darkness
+finding. **A graph claiming to check everything would be lying.**
+
+---
+
+## 10. The Metric That Decides the Business Case
 
 **Backlog Scan** (`core/backlog.py`) — deterministic, rules-based, no LLM. A cheap sweep over
 thousands of permits.
@@ -308,7 +521,7 @@ have known about?*
 
 ---
 
-## 8. Commercial Model
+## 11. Commercial Model
 
 ### Why it survives the pilot graveyard
 
@@ -368,7 +581,7 @@ what the human sees **and** shortens the queue. Turnaround days are extraordinar
 
 ---
 
-## 9. Honest Limits — stated in the app, not buried in an appendix
+## 12. Honest Limits — stated in the app, not buried in an appendix
 
 | # | Limit | Why we say it first |
 |---|---|---|
@@ -381,7 +594,7 @@ what the human sees **and** shortens the queue. Turnaround days are extraordinar
 
 ---
 
-## 10. Verification Status
+## 13. Verification Status
 
 The distinction between *"the tests pass"* and *"the product works"* is the whole discipline of this
 project. Here it is, without softening.
@@ -391,44 +604,80 @@ project. Here it is, without softening.
 | # | What was proven | How |
 |---|---|---|
 | 1 | Provenance verifier **rejects a hallucinated control**, a paraphrase of a real rule, and an empty citation — and **accepts** a genuine procedure quote | Unit test. A fabricated sentence (*"…shall record the ambient temperature in the site logbook…"*) returns `UNVERIFIED` and forces `confidence → low` |
-| 2 | Backlog scanner **finds the Deer Park permit** (10 defects) and **does not false-positive** the well-formed permit | A reviewer that flags everything is as useless as one that flags nothing — the negative case matters as much as the positive |
+| 2 | Backlog scanner **finds the Deer Park permit** (10 defects) and **does not false-positive** the well-formed permit | The negative case matters as much as the positive |
 | 3 | The buried safeguard is **recovered verbatim** from the permit prose | *"…prior to opening the line the crew should stop and obtain an operator to be present at the flange…"* |
 | 4 | 8 LangGraph nodes compile; **8/8 agent prompts build for all 3 industry packs**; every prompt carries the two overriding rules | Assertion on `NEVER INVENT A CONTROL` and `YOU DO NOT AUTHORISE ANYTHING` |
-| 5 | **12/12 page × industry-pack combinations render** | Streamlit `AppTest` |
-| 6 | Incident corpus integrity: every VERIFIED entry carries a source URL; every ILLUSTRATIVE entry is explicitly labelled | Assertion — cannot silently ship an unlabelled fake fatality |
+| 5 | **Graph node names ↔ pipeline labels match exactly** | If they drift, the live pipeline would silently stop advancing. Asserted, so it fails loudly instead |
+| 6 | **Connector round-trip is lossless**: 4 connectors × 5 permits = **20/20** | A dropped field is a defect that *looks like a clean review* |
+| 7 | **Assurance web is calibrated**: clean permit = **0** broken links; Deer Park permit = **11** | A graph that reddens a good permit destroys trust in every other panel |
+| 8 | **Structural similarity ranks correctly**: PTW-2026-0417 = **100%** vs Deer Park; clean permit = **0%** vs everything | Matched on failure *shape*, not subject matter |
+| 9 | **Live external APIs return real data** and the darkness overlap computes correctly (80% for the night permit, 0% for day shifts) | Called against `api.sunrise-sunset.org` and `api.weather.gov` |
+| 10 | **15/15 page × industry-pack combinations render** with non-zero content | Streamlit `AppTest`, plus an independent syntax gate |
+| 11 | Incident corpus integrity: every VERIFIED entry carries a source URL; every ILLUSTRATIVE entry is explicitly labelled | Cannot silently ship an unlabelled fake fatality |
 
-### ⚠️ NOT verified — the gap that matters
+### ✅ The LLM path — now exercised
 
-**The live LLM path has never been run.** There was no API key in the build environment, so:
+The seven agents have been **run end-to-end on Streamlit Cloud** against PTW-2026-0417 and return a
+coherent verdict:
 
-- The *structure*, the *provenance layer*, the *scanner* and the *UI* are proven.
-- **The quality of the agents' actual reasoning is not.**
+> **REJECT** — *"Permit PTW-2026-0417 is structurally unsafe due to lack of positive isolation,
+> competency gaps, and SIMOPS conflicts."*
 
-Specifically unproven, and each is a demo-critical question:
+The reasoning is coherent and cites the correct categories. This closes the gap that previously
+blocked any demo.
 
-1. Does the **Hold Point Enforcer** actually find the buried stop-work sentence in PTW-2026-0417?
-   *The entire demo hangs on this single moment.*
-2. Does the **Scope Decomposer** correctly split the five bundled tasks?
-3. Does the **Supervisor** reach `REJECT` on the Deer Park permit and `AUTHORISE` on the clean one —
-   i.e. is it *calibrated*, or does it just flag everything?
-4. Do the agents produce **verifiable quotes**, or do they paraphrase (in which case the provenance
-   layer will correctly flag them UNVERIFIED and the review will look weak)?
+### ⚠️ Still NOT verified — be precise about what this means
 
-> **Do not demo until this is closed.** If the agents produce mush, none of the architecture matters.
-> Add `OPENAI_API_KEY` to a local `.env` (or Streamlit Cloud secrets) and run PTW-2026-0417.
+Running once is not evaluation. **There is no golden set and no regression harness**, so the
+following remain *observed*, not *measured*:
+
+1. **Does the Hold Point Enforcer reliably find the buried stop-work sentence?** *The entire demo
+   hangs on this one moment.* It must quote, verbatim: *"prior to opening the line the crew should
+   stop and obtain an operator to be present at the flange."*
+2. **Is the Supervisor calibrated?** It must reach `REJECT` on the Deer Park permit **and
+   `AUTHORISE` on the clean one.** A reviewer that flags everything is as useless as one that flags
+   nothing — and the second half of that test is the one people forget to run.
+3. **Do the agents quote or paraphrase?** If they paraphrase, the provenance layer will correctly
+   flag them `UNVERIFIED` — the system stays honest, but the review *looks* weak. That is a
+   prompt-tuning problem, not an architecture problem, and the donut in §9 will show it immediately.
+4. **Run-to-run variance.** Temperature is 0, but JSON-shaped LLM output is not deterministic in
+   practice. No one has measured how often the review differs across runs of the same permit.
+
+> **What this needs is an evaluation harness** — a golden set of permits with known defects, scored
+> for precision and recall on hold-point recovery and verdict calibration. Until that exists, every
+> quality claim is anecdote. See §14 Phase 2.
 
 ### ⚠️ Also open
 
 - **The competitive scan is incomplete** (§3). Cority, Avetta, ISN, Honeywell, eVision and SAP were
   never scanned. If one already ships permit *review* reasoning — as opposed to a permit *form* —
-  the whitespace claim weakens and we need to know before it is made on stage.
+  the whitespace claim weakens, and we need to know **before** it is made on stage.
+- **`api.weather.gov` is US-only.** All three site packs use US coordinates. A non-US deployment
+  needs a different weather source.
+
+### A note on the test harness itself
+
+The render suite originally reported a page as **passing while it rendered zero elements** —
+Streamlit surfaces a script *compilation* error outside `at.exception`, so `AppTest` returned "no
+exception" on a file that did not even parse.
+
+**A test that cannot detect a syntax error is false assurance — precisely the failure mode this
+product exists to prevent.** The harness now parses every file itself and fails any page rendering
+fewer than 10 elements. It was verified with a negative control (deliberately breaking a file now
+fails the suite), and has since caught **four** real syntax errors that the old version would have
+waved through.
 
 ---
 
-## 11. Roadmap
+## 14. Roadmap
 
-**Phase 0 — Prove the reasoning (days).** Add an API key; run the seven agents end-to-end; tune
-prompts against the five permits. Finish the competitive scan.
+**Phase 0 — DONE.** The seven agents run end-to-end and return a coherent REJECT on the Deer Park
+permit. Remaining: finish the competitive scan (§3).
+
+**Phase 0.5 — Measure, don't just observe (days).** Build the evaluation harness: a golden set of
+permits with known defects, scored for precision/recall on hold-point recovery and — critically —
+**verdict calibration in both directions** (REJECT the lethal one, AUTHORISE the clean one). Until
+this exists, every quality claim is anecdote.
 
 **Phase 1 — Make it real (weeks).** Read permits *out of* SAP WCM / Maximo / Enablon and write
 findings back. Replace TF-IDF retrieval with real embeddings. Persist reviews with an immutable audit
@@ -446,7 +695,7 @@ first** with IOGP, OSHA and EEI contractor-fatality data before selling into it.
 
 ---
 
-## 12. The Three-Minute Demo
+## 15. The Three-Minute Demo
 
 The demo is the product. Structure it so the room feels the problem before it sees the software.
 
@@ -516,14 +765,17 @@ the thing they were about to ask.
 
 ---
 
-## 13. Topaz Fabric Import Summary
+## 16. Topaz Fabric Import Summary
 
 ```yaml
 asset_type: agentic_solution
 agents: 7                 # 8 prompt roles; Supervisor acts twice
-workflows: 1              # 8-node LangGraph, sequential
+workflows: 1              # 8-node LangGraph, streamed (UI advances on real node completion)
 industry_packs: 3         # refining (verified) · mining (verified) · utilities (HYPOTHESIS)
 knowledge_corpora: 3      # procedures · permits · major-accident investigations
+connectors: 4             # Enablon · SAP WCM · Maximo · local — SIMULATED, round-trip lossless
+live_external_apis: 2     # sunrise-sunset.org · weather.gov — REAL, no key, US-only for weather
+visuals: 6                # each a computed fact; calibration asserted in test
 models: GPT-4o primary, Claude Sonnet automatic failover
 guardrails:
   - programmatic citation verification (code, not prompt) — rejects hallucinated controls
@@ -531,7 +783,7 @@ guardrails:
   - fail-loud parsing (no silent empty results in a safety system)
   - verified/illustrative separation in the evidence corpus
 pii: none
-production_readiness: prototype — see §10
+production_readiness: prototype — see §13
 ```
 
 ### The reusable IP
@@ -544,7 +796,11 @@ production_readiness: prototype — see §10
 3. **Incident-precedent matching** — turning a corpus of investigation reports into a live,
    structural control at the moment of decision. Applicable anywhere an industry investigates its own
    failures.
-4. **The swappable domain pack** — industry content fully separated from agent logic.
+4. **Live-fact grounding** — the pattern of resolving a rule that a document *cannot* answer by
+   fetching the fact from the real world, and marking that finding as one the model **could not have
+   hallucinated because no model produced it**. Transferable to any domain where compliance depends
+   on external state (weather, market data, sanctions lists, asset telemetry).
+5. **The swappable domain pack** — industry content fully separated from agent logic.
 
 Everything else — the permits, the procedures, the hazard vocabulary — is a **pack** to be replaced
 per client.
