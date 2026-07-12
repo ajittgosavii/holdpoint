@@ -44,6 +44,8 @@ fabricate a safeguard", fabricating the wind would be self-refuting.
 from __future__ import annotations
 
 import json
+import os
+import pathlib
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
@@ -54,6 +56,49 @@ UA = "HOLDPOINT permit-assurance demo (safety research; contact: site admin)"
 
 # In-process cache — a turnaround permit desk would hammer these otherwise.
 _CACHE: dict[str, dict] = {}
+
+# ------------------------------------------------------------------------------------------
+# DISK CACHE — so a bad network cannot take the live-data story away from you.
+#
+# The reality check is the strongest thing this product does, and it depends on an outbound
+# call. Conference wifi is a coin flip. So every successful fetch is written to disk, and if
+# the network later fails we serve the cached REAL response — clearly labelled as cached, with
+# the timestamp it was actually fetched.
+#
+# This is NOT the same as inventing the weather. A cached real fetch is still a real fetch; it
+# is simply no longer live, and the UI says so. Fabricating a value we never received would be
+# self-refuting in a product whose argument is "do not fabricate a safeguard". Serving a stale
+# but genuine measurement, labelled stale, is honest.
+# ------------------------------------------------------------------------------------------
+CACHE_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "cache"
+CACHE_ENABLED = os.getenv("HOLDPOINT_CACHE", "1") != "0"
+
+
+def _cache_path(key: str) -> pathlib.Path:
+    safe = key.replace(",", "_").replace(":", "-").replace("/", "-")
+    return CACHE_DIR / f"conditions_{safe}.json"
+
+
+def _cache_read(key: str) -> dict | None:
+    if not CACHE_ENABLED:
+        return None
+    fp = _cache_path(key)
+    if not fp.exists():
+        return None
+    try:
+        return json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _cache_write(key: str, payload: dict) -> None:
+    if not CACHE_ENABLED:
+        return
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        _cache_path(key).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        pass  # a cache write failure must never break a review
 
 
 @dataclass
@@ -74,6 +119,10 @@ class Conditions:
     forecast: str | None = None
     temperature: str | None = None
     error: str | None = None
+    # Cache provenance. A cached real fetch is still a REAL fetch — it is just no longer live,
+    # and the UI must say which it is rather than quietly implying freshness.
+    cached: bool = False
+    fetched_at: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -151,10 +200,27 @@ def get_conditions(site: dict, date: str | None = None) -> Conditions:
         errors.append(f"weather: {type(e).__name__}")
 
     c.available = bool(c.sunrise_utc or c.wind_direction)
-    if errors:
-        c.error = "; ".join(errors)
-    if not c.available:
-        c.source = "unavailable"
+
+    if c.available:
+        # A genuinely live fetch. Record it, and persist it so a later network failure cannot
+        # take this away from us.
+        c.cached = False
+        c.fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        if errors:
+            c.error = "; ".join(errors)
+        _cache_write(key, c.as_dict())
+    else:
+        # Live fetch failed. Serve the last REAL response we received, if we have one — clearly
+        # labelled as cached, with the time it was actually fetched. We do not invent a value we
+        # never received.
+        cached = _cache_read(key)
+        if cached:
+            c = Conditions(**cached)
+            c.cached = True
+            c.source = f"{c.source} (CACHED — network unavailable)"
+        else:
+            c.source = "unavailable"
+            c.error = "; ".join(errors) if errors else "no network and no cached response"
 
     _CACHE[key] = c.as_dict()
     return c
@@ -386,9 +452,12 @@ def conditions_brief(permit: dict, site: dict, date: str | None = None) -> str:
             "confirmed by hand at the work location before containment is broken."
         )
 
+    freshness = ("CACHED — last successfully fetched " + (c["fetched_at"] or "unknown")
+                 if c.get("cached") else "LIVE")
     lines = [
         "--- REAL EXTERNAL CONDITIONS AT THE WORK SITE ---",
-        f"(Live data, fetched from {c['source']}. These are FACTS, not estimates.)",
+        f"({freshness} data from {c['source']}. These are FACTS, not estimates. "
+        f"They were measured, not generated.)",
         f"Site: {c['site_name']}  ({c['lat']}, {c['lon']})   Date: {c['date']}",
     ]
     if c["sunrise_utc"]:

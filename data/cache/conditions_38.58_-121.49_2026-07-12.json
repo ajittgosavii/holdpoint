@@ -1,0 +1,19 @@
+{
+  "available": true,
+  "source": "api.sunrise-sunset.org + api.weather.gov (NOAA/NWS)",
+  "site_name": "Distribution Network \u2014 Substation & Overhead",
+  "lat": 38.58,
+  "lon": -121.49,
+  "date": "2026-07-12",
+  "sunrise_utc": "2026-07-12T12:50:34+00:00",
+  "sunset_utc": "2026-07-13T03:32:48+00:00",
+  "civil_twilight_begin_utc": "2026-07-12T12:21:01+00:00",
+  "civil_twilight_end_utc": "2026-07-13T04:02:21+00:00",
+  "wind_direction": "SSW",
+  "wind_speed": "3 mph",
+  "forecast": "Slight Chance Light Rain",
+  "temperature": "69\u00b0F",
+  "error": null,
+  "cached": false,
+  "fetched_at": "2026-07-12T16:37:47+00:00"
+}

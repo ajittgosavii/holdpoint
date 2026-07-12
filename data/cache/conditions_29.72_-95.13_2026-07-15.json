@@ -1,0 +1,19 @@
+{
+  "available": true,
+  "source": "api.sunrise-sunset.org + api.weather.gov (NOAA/NWS)",
+  "site_name": "Gulf Coast Refinery \u2014 Unit 12",
+  "lat": 29.72,
+  "lon": -95.13,
+  "date": "2026-07-15",
+  "sunrise_utc": "2026-07-15T11:29:12+00:00",
+  "sunset_utc": "2026-07-16T01:23:55+00:00",
+  "civil_twilight_begin_utc": "2026-07-15T11:03:48+00:00",
+  "civil_twilight_end_utc": "2026-07-16T01:49:19+00:00",
+  "wind_direction": "SE",
+  "wind_speed": "5 mph",
+  "forecast": "Chance Showers And Thunderstorms",
+  "temperature": "87\u00b0F",
+  "error": null,
+  "cached": false,
+  "fetched_at": "2026-07-12T16:35:56+00:00"
+}

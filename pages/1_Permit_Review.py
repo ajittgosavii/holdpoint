@@ -124,12 +124,21 @@ else:
     with lc4:
         st.metric("Wind", f"{cond['wind_direction'] or '—'} {cond['wind_speed'] or ''}",
                   help=cond["forecast"] or "")
-    st.caption(
-        f"🌐 **LIVE DATA — not simulated.** Sun and wind fetched from `{cond['source']}` for "
-        f"{cond['site_name']} ({cond['lat']}, {cond['lon']}) on **{cond['date']}** — the permit's "
-        f"own work date. The darkness overlap is **computed** from the permit's shift window in the "
-        f"site's timezone ({site.get('tz', 'n/a')}), not assumed from the word \"night\"."
-    )
+    if cond.get("cached"):
+        st.caption(
+            f"📦 **CACHED REAL DATA — not simulated, not live.** The network is unavailable, so this "
+            f"is the last genuine response received from `{cond['source']}`, fetched "
+            f"**{cond.get('fetched_at', 'unknown')}**. It was measured, not generated. HOLDPOINT "
+            f"serves a stale real measurement and *says* it is stale — it does not invent a fresh one."
+        )
+    else:
+        st.caption(
+            f"🌐 **LIVE DATA — not simulated.** Sun and wind fetched just now from `{cond['source']}` "
+            f"for {cond['site_name']} ({cond['lat']}, {cond['lon']}) on **{cond['date']}** — the "
+            f"permit's own work date. The darkness overlap is **computed** from the permit's shift "
+            f"window in the site's timezone ({site.get('tz', 'n/a')}), not assumed from the word "
+            f"\"night\"."
+        )
 
 
     fig_dark = shift_vs_darkness(rc)

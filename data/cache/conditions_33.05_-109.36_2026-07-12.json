@@ -1,0 +1,19 @@
+{
+  "available": true,
+  "source": "api.sunrise-sunset.org + api.weather.gov (NOAA/NWS)",
+  "site_name": "Copper Concentrator \u2014 Process Plant",
+  "lat": 33.05,
+  "lon": -109.36,
+  "date": "2026-07-12",
+  "sunrise_utc": "2026-07-12T12:16:43+00:00",
+  "sunset_utc": "2026-07-13T02:29:35+00:00",
+  "civil_twilight_begin_utc": "2026-07-12T11:49:56+00:00",
+  "civil_twilight_end_utc": "2026-07-13T02:56:23+00:00",
+  "wind_direction": "ESE",
+  "wind_speed": "8 mph",
+  "forecast": "Sunny",
+  "temperature": "84\u00b0F",
+  "error": null,
+  "cached": false,
+  "fetched_at": "2026-07-12T16:37:46+00:00"
+}
