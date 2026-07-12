@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 940" width="1440" height="940" font-family="Segoe UI, Inter, system-ui, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3.2" orient="auto">
+      <path d="M0,0 L0,6.4 L9,3.2 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="10" markerHeight="10" refX="9" refY="3.2" orient="auto">
+      <path d="M0,0 L0,6.4 L9,3.2 z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="3.2" orient="auto">
+      <path d="M0,0 L0,6.4 L9,3.2 z" fill="#16a34a"/>
+    </marker>
+    <style>
+      .t      { fill:#0f172a; }
+      .lbl    { font-size:13px; font-weight:600; fill:#0f172a; }
+      .sub    { font-size:11px; fill:#475569; }
+      .tiny   { font-size:10px; fill:#64748b; }
+      .band   { font-size:11px; font-weight:700; letter-spacing:1.4px; fill:#94a3b8; }
+      .agent  { font-size:11.5px; font-weight:600; fill:#1e293b; }
+      .flow   { stroke:#64748b; stroke-width:1.6; fill:none; marker-end:url(#arrow); }
+      .flowR  { stroke:#dc2626; stroke-width:2;   fill:none; marker-end:url(#arrowRed); }
+      .flowG  { stroke:#16a34a; stroke-width:2;   fill:none; marker-end:url(#arrowGreen); }
+      .note   { font-size:10.5px; font-style:italic; fill:#dc2626; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="940" fill="#ffffff"/>
+
+  <!-- ============ TITLE ============ -->
+  <text x="40" y="44" font-size="25" font-weight="700" class="t">HOLDPOINT — High-Level Architecture</text>
+  <text x="40" y="68" font-size="13.5" fill="#475569">The adversary at the permit gate. Seven agents attack a work permit before it is authorised. A human always decides.</text>
+  <line x1="40" y1="84" x2="1400" y2="84" stroke="#e2e8f0" stroke-width="1.5"/>
+
+  <!-- ============ BAND 1 : SOURCES ============ -->
+  <text x="40" y="116" class="band">1 — SOURCES</text>
+
+  <!-- System of record -->
+  <rect x="40" y="130" width="440" height="118" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="60" y="155" class="lbl">System of Record</text>
+  <text x="60" y="174" class="sub">Enablon · SAP WCM · IBM Maximo · eVision</text>
+  <rect x="60" y="186" width="120" height="24" rx="5" fill="#dbeafe"/><text x="70" y="202" class="tiny">permit OUT</text>
+  <rect x="188" y="186" width="150" height="24" rx="5" fill="#dbeafe"/><text x="198" y="202" class="tiny">findings BACK IN</text>
+  <text x="60" y="232" class="note">SIMULATED — no live vendor API is public</text>
+
+  <!-- Real world -->
+  <rect x="500" y="130" width="440" height="118" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="520" y="155" class="lbl">The Real World  ·  LIVE, no API key</text>
+  <text x="520" y="174" class="sub">api.sunrise-sunset.org  ·  api.weather.gov (NOAA)</text>
+  <text x="520" y="194" class="tiny">Real sun + wind, for THIS permit's date and THIS site's coordinates</text>
+  <text x="520" y="212" class="tiny">Darkness overlap computed in the site's timezone</text>
+  <text x="520" y="232" style="font-size:10.5px;font-style:italic;fill:#166534;">Facts, not model opinions — cached, never fabricated</text>
+
+  <!-- Corpora -->
+  <rect x="960" y="130" width="440" height="118" rx="10" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.5"/>
+  <text x="980" y="155" class="lbl">Knowledge Corpora</text>
+  <text x="980" y="176" class="sub">Site procedures — the ground truth every control must trace to</text>
+  <text x="980" y="196" class="sub">Major-accident investigations — CSB · Cullen · ICMM</text>
+  <text x="980" y="216" class="sub">Industry packs — Refining · Mining · Utilities</text>
+  <text x="980" y="236" class="tiny">Verified vs illustrative rigidly separated</text>
+
+  <!-- ============ BAND 2 : NORMALISATION ============ -->
+  <text x="40" y="292" class="band">2 — NORMALISE</text>
+  <rect x="40" y="306" width="1360" height="70" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="60" y="332" class="lbl">core/connectors.py — one canonical permit shape</text>
+  <text x="60" y="352" class="sub">Every vendor names the same thing differently: workOrderDescription (Enablon) · LTXT (SAP) · description_longdescription (Maximo). The agents must never see any of it.</text>
+  <text x="60" y="368" class="tiny">Round-trip tested lossless (4 connectors x 5 permits = 20/20) — a dropped field is a defect that LOOKS like a clean review</text>
+
+  <path class="flow" d="M260,248 L260,306"/>
+  <path class="flow" d="M720,248 L720,306"/>
+  <path class="flow" d="M1180,248 L1180,306"/>
+
+  <!-- ============ BAND 3 : AGENTS ============ -->
+  <text x="40" y="420" class="band">3 — SEVEN ADVERSARIAL AGENTS  ·  LangGraph, streamed</text>
+  <rect x="40" y="434" width="1360" height="152" rx="10" fill="#fffbeb" stroke="#fcd34d" stroke-width="1.5"/>
+
+  <rect x="60" y="456" width="152" height="52" rx="7" fill="#1e40af"/>
+  <text x="76" y="478" font-size="11.5" font-weight="700" fill="#ffffff">SUPERVISOR</text>
+  <text x="76" y="495" font-size="10" fill="#dbeafe">plans the attack</text>
+
+  <rect x="236" y="456" width="176" height="52" rx="7" fill="#fff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="250" y="477" class="agent">Scope Decomposer</text>
+  <text x="250" y="494" class="tiny">one job, or five?</text>
+
+  <rect x="428" y="456" width="176" height="52" rx="7" fill="#fff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="442" y="477" class="agent">Hazard Challenger</text>
+  <text x="442" y="494" class="tiny">is the control real?</text>
+
+  <rect x="620" y="456" width="200" height="52" rx="7" fill="#fee2e2" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="634" y="477" font-size="11.5" font-weight="700" fill="#991b1b">Hold Point Enforcer</text>
+  <text x="634" y="494" style="font-size:10px;fill:#b91c1c;">the buried safeguard</text>
+
+  <rect x="836" y="456" width="176" height="52" rx="7" fill="#fff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="850" y="477" class="agent">Competency Matcher</text>
+  <text x="850" y="494" class="tiny">this person, this hazard</text>
+
+  <rect x="1028" y="456" width="176" height="52" rx="7" fill="#fff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="1042" y="477" class="agent">Isolation &amp; SIMOPS</text>
+  <text x="1042" y="494" class="tiny">what else is live?</text>
+
+  <rect x="1220" y="456" width="160" height="52" rx="7" fill="#fff" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="1234" y="477" class="agent">Precedent</text>
+  <text x="1234" y="494" class="tiny">which accident?</text>
+
+  <rect x="60" y="524" width="1320" height="44" rx="7" fill="#dbeafe" stroke="#1e40af" stroke-width="1.5"/>
+  <text x="76" y="551" font-size="11.5" font-weight="700" fill="#1e3a8a">SUPERVISOR — reviews its specialists against its own plan, then recommends:  AUTHORISE  ·  HOLD WITH CONDITIONS  ·  REJECT</text>
+
+  <path class="flow" d="M720,376 L720,434"/>
+
+  <!-- ============ BAND 4 : THE GATE ============ -->
+  <text x="40" y="628" class="band">4 — THE GATE  ·  why this is allowed near a permit</text>
+
+  <rect x="40" y="642" width="660" height="128" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="60" y="668" font-size="13.5" font-weight="700" fill="#991b1b">core/provenance.py — a CODE check, not a prompt</text>
+  <text x="60" y="690" class="sub">Every control an agent claims is mandated must quote a real procedure verbatim.</text>
+  <text x="60" y="708" class="sub">The system then verifies the quote actually exists in the document.</text>
+  <text x="60" y="730" style="font-size:11.5px;font-weight:600;fill:#991b1b;">The model cannot talk its way past it, because it is code.</text>
+  <text x="60" y="750" class="tiny">Unverifiable assertions are surfaced as UNVERIFIED, confidence downgraded — never as fact.</text>
+  <text x="60" y="764" class="tiny">Unit-tested: rejects a hallucinated control, a paraphrase, and an empty citation.</text>
+
+  <rect x="720" y="642" width="680" height="128" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="740" y="668" font-size="13.5" font-weight="700" fill="#166534">Human-in-the-loop — HOLDPOINT authorises nothing</text>
+  <text x="740" y="690" class="sub">Every output is stamped PENDING_HUMAN_AUTHORISATION.</text>
+  <text x="740" y="708" class="sub">A qualified human authoriser makes the actual decision.</text>
+  <text x="740" y="730" style="font-size:11.5px;font-weight:600;fill:#166534;">The system's job is to ensure they cannot decide without seeing this.</text>
+  <text x="740" y="752" class="tiny">Live-API facts bypass the provenance check — no model produced them, so there is nothing to fabricate.</text>
+
+  <path class="flowR" d="M370,568 L370,642"/>
+  <path class="flowG" d="M1060,568 L1060,642"/>
+
+  <!-- ============ BAND 5 : OUTPUT ============ -->
+  <text x="40" y="812" class="band">5 — OUTPUT</text>
+  <rect x="40" y="826" width="1360" height="82" rx="10" fill="#0f172a"/>
+  <text x="60" y="854" font-size="14" font-weight="700" fill="#ffffff">HUMAN AUTHORISER DECIDES</text>
+  <text x="60" y="876" font-size="11.5" fill="#cbd5e1">Findings + enforced hold points written BACK to the system of record. Permit set to HELD pending closeout.</text>
+  <text x="60" y="896" font-size="11" fill="#94a3b8">It does not authorise. It does not close findings. It only guarantees a human cannot decide without seeing this.</text>
+
+  <rect x="1060" y="844" width="150" height="46" rx="7" fill="#166534"/>
+  <text x="1082" y="872" font-size="12.5" font-weight="700" fill="#fff">AUTHORISE</text>
+  <rect x="1222" y="844" width="70" height="46" rx="7" fill="#b45309"/>
+  <text x="1242" y="872" font-size="12.5" font-weight="700" fill="#fff">HOLD</text>
+  <rect x="1304" y="844" width="76" height="46" rx="7" fill="#991b1b"/>
+  <text x="1320" y="872" font-size="12.5" font-weight="700" fill="#fff">REJECT</text>
+
+  <path class="flow" d="M720,770 L720,826"/>
+
+  <!-- Write-back loop -->
+  <path d="M40,868 C14,868 14,196 40,196" stroke="#94a3b8" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="8" y="530" transform="rotate(-90 8,530)" style="font-size:10px;fill:#64748b;">findings written back to the system of record</text>
+
+  <text x="40" y="930" style="font-size:10px;fill:#94a3b8;">GPT-4o primary, automatic failover to Claude Sonnet  ·  Streamlit UI  ·  Industry packs swap the domain without touching a single agent</text>
+</svg>
