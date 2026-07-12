@@ -11,14 +11,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 st.set_page_config(page_title="Permit Review | HOLDPOINT", page_icon="🔍", layout="wide")
 
 from core.styles import (inject_styles, render_page_header, render_section,
-                         render_pipeline, render_empty_state, render_kpi_row, severity_badge)
+                         render_pipeline, pipeline_html, render_empty_state, render_kpi_row,
+                         severity_badge)
 from core.ui import (bootstrap, require_llm, render_verdict, render_authorisation_gate,
                      citation_badge, render_quote, render_data_provenance)
 from core.backlog import scan_permit
 from core.connectors import get_connector, CONNECTORS, DEFAULT_CONNECTOR
 from core.reality import check_permit_against_reality
 from data.permits import PERMITS, get_permit
-from agents.permit_review.graph import review_permit, STEP_LABELS
+from agents.permit_review.graph import review_permit_stream, STEP_LABELS
 
 inject_styles()
 site = bootstrap()
@@ -35,10 +36,13 @@ render_page_header(
     ai_type="agentic",
 )
 
-render_pipeline([
-    "Supervisor plans", "Scope", "Hazards", "Hold Points",
-    "Competency", "Isolation & SIMOPS", "Precedent", "Verdict",
-])
+PIPELINE_STEPS = ["Supervisor plans", "Scope", "Hazards", "Hold Points",
+                  "Competency", "Isolation & SIMOPS", "Precedent", "Verdict"]
+NODE_ORDER = [k for k, _ in STEP_LABELS]
+
+# A placeholder, not a static render — the graph stream drives this as each agent finishes.
+pipeline_slot = st.empty()
+pipeline_slot.markdown(pipeline_html(PIPELINE_STEPS), unsafe_allow_html=True)
 
 # --- Select a permit ---------------------------------------------------------------------
 render_section("Select a permit awaiting authorisation")
@@ -162,12 +166,34 @@ st.markdown("---")
 if run:
     require_llm()
 
+    result = None
     with st.status("Seven agents attacking the permit…", expanded=True) as status:
-        for _, label in STEP_LABELS:
-            st.write(label)
-        result = review_permit(permit)
+        log = st.empty()
+        done_labels = []
+
+        for node_name, state in review_permit_stream(permit):
+            if node_name == "__done__":
+                result = state
+                break
+
+            idx = NODE_ORDER.index(node_name) if node_name in NODE_ORDER else -1
+            label = dict(STEP_LABELS).get(node_name, node_name)
+
+            # Advance the pipeline to the NEXT step: this one just finished.
+            pipeline_slot.markdown(
+                pipeline_html(PIPELINE_STEPS, active_index=min(idx + 1, len(PIPELINE_STEPS) - 1)),
+                unsafe_allow_html=True,
+            )
+            done_labels.append(f"✓ {label}")
+            log.markdown("\n\n".join(done_labels))
+
+        pipeline_slot.markdown(pipeline_html(PIPELINE_STEPS, complete=True), unsafe_allow_html=True)
         status.update(label="Review complete — a human must now decide.",
                       state="complete", expanded=False)
+
+    if result is None:
+        st.error("The review did not complete. Treat this as a FAILED review, not a clean permit.")
+        st.stop()
 
     verdict = result.get("verdict", {}) or {}
     prov = result.get("provenance", {}) or {}

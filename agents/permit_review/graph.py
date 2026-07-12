@@ -487,25 +487,53 @@ def build_permit_graph():
     return g.compile()
 
 
-def review_permit(permit: dict) -> dict:
-    """Run the full adversarial review. Returns the complete state."""
-    graph = build_permit_graph()
-    initial: PermitState = {
+def _initial_state(permit: dict) -> PermitState:
+    return {
         "permit": permit,
         "plan": {}, "scope": {}, "hazards": {}, "hold_points": {},
         "competency": {}, "isolation_simops": {}, "precedent": {},
         "verdict": {}, "provenance": {}, "reality": {}, "current_step": "plan",
     }
-    result = graph.invoke(initial)
-    result["review_status"] = "PENDING_HUMAN_AUTHORISATION"
-    result["disclaimer"] = (
+
+
+def _finalise(state: dict) -> dict:
+    state["review_status"] = "PENDING_HUMAN_AUTHORISATION"
+    state["disclaimer"] = (
         "HOLDPOINT is decision support. It does not authorise work. A qualified human authoriser "
         "must make the decision. Findings marked UNVERIFIED could not be traced to a real procedure "
         "and must be checked by hand."
     )
-    return result
+    return state
 
 
+def review_permit(permit: dict) -> dict:
+    """Run the full adversarial review, blocking. Returns the complete state."""
+    return _finalise(build_permit_graph().invoke(_initial_state(permit)))
+
+
+def review_permit_stream(permit: dict):
+    """Run the review, yielding after EACH agent finishes.
+
+    Yields (node_name, accumulated_state) so the UI can advance the pipeline on REAL node
+    completion. A progress bar driven by a timer is a lie about what the system is doing —
+    this one moves when an agent actually returns.
+
+    Final yield is ("__done__", complete_state).
+    """
+    graph = build_permit_graph()
+    state: dict = dict(_initial_state(permit))
+
+    for chunk in graph.stream(state, stream_mode="updates"):
+        for node_name, update in chunk.items():
+            if isinstance(update, dict):
+                state.update(update)
+            yield node_name, state
+
+    yield "__done__", _finalise(state)
+
+
+# The keys MUST match the graph node names exactly — the UI advances the pipeline by matching
+# the streamed node name against this list.
 STEP_LABELS = [
     ("plan", "Supervisor plans the attack"),
     ("decompose_scope", "Scope Decomposer — is this one job or many?"),

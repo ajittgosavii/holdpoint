@@ -529,27 +529,47 @@ def render_section(title: str, subtitle: str = ""):
         st.markdown(f'<div class="section-subtext">{subtitle}</div>', unsafe_allow_html=True)
 
 
-def render_pipeline(steps: list[str], active_index: int = -1):
-    """Render a pipeline progress indicator using Streamlit columns."""
-    import streamlit as st
-    cols = st.columns(len(steps) * 2 - 1)
-    col_idx = 0
+def pipeline_html(steps: list[str], active_index: int = -1, complete: bool = False) -> str:
+    """Render the pipeline as ONE HTML block.
+
+    Returned as a string rather than written with st.columns so it can be swapped in place inside
+    an st.empty() placeholder while the graph streams. Columns cannot be re-rendered; this can.
+
+    active_index = -1 and complete = False -> everything pending (grey)
+    complete = True                        -> everything done (green)
+    """
+    parts = []
     for i, step in enumerate(steps):
-        if active_index < 0:
+        if complete:
+            cls = "step-done"
+        elif active_index < 0 or i > active_index:
             cls = "step-pending"
         elif i < active_index:
             cls = "step-done"
-        elif i == active_index:
-            cls = "step-active"
         else:
-            cls = "step-pending"
-        with cols[col_idx]:
-            st.markdown(f'<div class="pipeline-step {cls}">{step}</div>', unsafe_allow_html=True)
-        col_idx += 1
+            cls = "step-active"
+
+        spinner = ""
+        if cls == "step-active":
+            spinner = '<div style="font-size:0.65rem;opacity:0.75;margin-top:0.15rem;">working…</div>'
+        elif cls == "step-done":
+            spinner = '<div style="font-size:0.65rem;opacity:0.75;margin-top:0.15rem;">&#10003;</div>'
+
+        parts.append(f'<div class="pipeline-step {cls}">{step}{spinner}</div>')
         if i < len(steps) - 1:
-            with cols[col_idx]:
-                st.markdown('<div class="pipeline-arrow" style="text-align:center; padding-top:0.6rem; color:#cbd5e1;">&#9654;</div>', unsafe_allow_html=True)
-            col_idx += 1
+            parts.append('<div class="pipeline-arrow">&#9654;</div>')
+
+    return (
+        '<div class="pipeline-container"><div class="pipeline-steps">'
+        + "".join(parts)
+        + "</div></div>"
+    )
+
+
+def render_pipeline(steps: list[str], active_index: int = -1, complete: bool = False):
+    """Write the pipeline directly. For live updates, use pipeline_html() inside an st.empty()."""
+    import streamlit as st
+    st.markdown(pipeline_html(steps, active_index, complete), unsafe_allow_html=True)
 
 
 def render_empty_state(icon: str, title: str, description: str):
