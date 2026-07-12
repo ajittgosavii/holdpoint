@@ -16,6 +16,7 @@ from core.ui import (bootstrap, require_llm, render_verdict, render_authorisatio
                      citation_badge, render_quote, render_data_provenance)
 from core.backlog import scan_permit
 from core.connectors import get_connector, CONNECTORS, DEFAULT_CONNECTOR
+from core.reality import check_permit_against_reality
 from data.permits import PERMITS, get_permit
 from agents.permit_review.graph import review_permit, STEP_LABELS
 
@@ -77,6 +78,46 @@ elif pre["clean"]:
 else:
     st.warning(f"**Structural pre-screen: {pre['defect_count']} defect(s), worst severity "
                f"{pre['worst_severity'].upper()}.**")
+
+# --- REAL external conditions. Not simulated. Live APIs, no key. -------------------------
+rc = check_permit_against_reality(permit, site)
+cond = rc["conditions"]
+
+if rc.get("unavailable"):
+    st.info(
+        "**Live external conditions unavailable.** HOLDPOINT does not guess the weather — daylight "
+        "and wind direction must be confirmed by hand at the work location before containment is "
+        "broken."
+    )
+else:
+    lc1, lc2, lc3, lc4 = st.columns(4)
+    with lc1:
+        st.metric("Sunset (UTC)", (cond["sunset_utc"] or "—")[11:16])
+    with lc2:
+        st.metric("Sunrise (UTC)", (cond["sunrise_utc"] or "—")[11:16])
+    with lc3:
+        st.metric("Wind", f"{cond['wind_direction'] or '—'} {cond['wind_speed'] or ''}")
+    with lc4:
+        st.metric("Conditions", cond["forecast"] or "—")
+    st.caption(
+        f"🌐 **LIVE DATA — not simulated.** Fetched from `{cond['source']}` for "
+        f"{cond['site_name']} ({cond['lat']}, {cond['lon']}) on {cond['date']}. "
+        f"A procedure clause about darkness or wind cannot be judged from the permit alone — it "
+        f"depends on the real world."
+    )
+
+if rc.get("findings"):
+    st.error(
+        f"**{len(rc['findings'])} finding(s) established by LIVE EXTERNAL DATA — these are facts, "
+        f"not model opinions.**"
+    )
+    for f in rc["findings"]:
+        st.markdown(f"{severity_badge(f['severity'])} &nbsp; **{f['finding']}**",
+                    unsafe_allow_html=True)
+        render_quote(f["procedure_clause"], f["procedure_doc"])
+        st.caption(f"✅ Established by **{f['established_by']}** — a real API, not the model. "
+                   f"This finding cannot be a hallucination, because no model produced it.")
+        st.markdown("")
 
 with st.expander("View the permit pack as submitted", expanded=False):
     st.markdown(f"**Unit**: {permit['unit']} · **Shift**: {permit['shift']} · "

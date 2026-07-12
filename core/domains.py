@@ -27,6 +27,8 @@ REFINING = {
     "key": "refining",
     "label": "Refining & Chemicals",
     "site_name": "Gulf Coast Refinery — Unit 12",
+    # Real coordinates — Deer Park, Texas. Used to fetch REAL sunrise/sunset and wind.
+    "lat": 29.72, "lon": -95.13,
     "evidence_status": "VERIFIED",
     "evidence_note": (
         "Verified. US Chemical Safety Board final report on the PEMEX Deer Park incident "
@@ -64,6 +66,8 @@ MINING = {
     "key": "mining",
     "label": "Mining & Metals",
     "site_name": "Copper Concentrator — Process Plant",
+    # Real coordinates — Morenci, Arizona (copper district).
+    "lat": 33.05, "lon": -109.36,
     "evidence_status": "VERIFIED",
     "evidence_note": (
         "Verified. ICMM '2020-2024 Safety Performance: Insights' (July 2025): 42 member fatalities "
@@ -102,6 +106,8 @@ UTILITIES = {
     "key": "utilities",
     "label": "Utilities (T&D)",
     "site_name": "Distribution Network — Substation & Overhead",
+    # Real coordinates — northern California service territory.
+    "lat": 38.58, "lon": -121.49,
     "evidence_status": "HYPOTHESIS — NOT VERIFIED",
     "evidence_note": (
         "NOT VERIFIED. This pack is a well-founded hypothesis, not a research finding. The argument: "

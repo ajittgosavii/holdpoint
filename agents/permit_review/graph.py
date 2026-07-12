@@ -25,6 +25,7 @@ from core.llm import get_openai_primary
 from core.prompts import get_prompt
 from core.domains import get_site
 from core.provenance import verify_assertions, provenance_summary
+from core.reality import conditions_brief, check_permit_against_reality
 from core.vectorstore import add_documents, search_documents, COLLECTION_INCIDENTS
 from data.procedures import procedure_corpus, procedures_as_text
 from data.incidents import incident_corpus, incident_as_text
@@ -41,6 +42,7 @@ class PermitState(TypedDict):
     precedent: dict
     verdict: dict
     provenance: dict
+    reality: dict
     current_step: str
 
 
@@ -113,7 +115,9 @@ Shift: {p['shift']}
 {p.get('unit_state', '(not supplied)')}
 
 --- OTHER PERMITS LIVE OR PENDING ON THIS UNIT ---
-{concurrent}"""
+{concurrent}
+
+{conditions_brief(p, get_site())}"""
 
 
 def _ask(role: str, prompt: str, expect: str = "object"):
@@ -374,6 +378,10 @@ def verdict(state: PermitState) -> dict:
     """Provenance-check every assertion, THEN ask the supervisor to decide."""
     corpus = procedure_corpus()
 
+    # Facts established by real external APIs (daylight, wind). These are NOT model output, so they
+    # bypass the provenance check — there is nothing to hallucinate. They are simply true.
+    reality = check_permit_against_reality(state["permit"], get_site())
+
     # Gather every assertion that claims a procedural requirement, and verify its quote.
     assertions: list[dict] = []
     for group, key in [
@@ -425,6 +433,10 @@ HOLD POINTS: {json.dumps(state.get('hold_points', {}), indent=2, default=str)[:2
 COMPETENCY: {json.dumps(state.get('competency', {}), indent=2, default=str)[:2000]}
 ISOLATION & SIMOPS: {json.dumps(state.get('isolation_simops', {}), indent=2, default=str)[:2000]}
 PRECEDENT: {json.dumps(state.get('precedent', {}), indent=2, default=str)[:1500]}
+
+--- FACTS ESTABLISHED BY LIVE EXTERNAL DATA (not model output — these are simply true) ---
+{json.dumps(reality.get('findings', []), indent=2, default=str)[:2000] or "none"}
+{reality.get('note', '')}
 {unverified_note}
 Return JSON:
 {{
@@ -445,6 +457,7 @@ Return JSON:
     return {
         "verdict": out,
         "provenance": {**summary, "assertions": verified, "by_group": by_group},
+        "reality": reality,
         "current_step": "complete",
     }
 
@@ -481,7 +494,7 @@ def review_permit(permit: dict) -> dict:
         "permit": permit,
         "plan": {}, "scope": {}, "hazards": {}, "hold_points": {},
         "competency": {}, "isolation_simops": {}, "precedent": {},
-        "verdict": {}, "provenance": {}, "current_step": "plan",
+        "verdict": {}, "provenance": {}, "reality": {}, "current_step": "plan",
     }
     result = graph.invoke(initial)
     result["review_status"] = "PENDING_HUMAN_AUTHORISATION"
