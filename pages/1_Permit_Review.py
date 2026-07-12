@@ -18,6 +18,8 @@ from core.ui import (bootstrap, require_llm, render_verdict, render_authorisatio
 from core.backlog import scan_permit
 from core.connectors import get_connector, CONNECTORS, DEFAULT_CONNECTOR
 from core.reality import check_permit_against_reality
+from core.charts import (shift_vs_darkness, simops_timeline, structural_similarity,
+                         provenance_donut)
 from data.permits import PERMITS, get_permit
 from agents.permit_review.graph import review_permit_stream, STEP_LABELS
 
@@ -129,6 +131,20 @@ else:
         f"site's timezone ({site.get('tz', 'n/a')}), not assumed from the word \"night\"."
     )
 
+
+    fig_dark = shift_vs_darkness(rc)
+    if fig_dark is not None:
+        st.plotly_chart(fig_dark, use_container_width=True)
+
+# The SIMOPS picture is an INPUT fact: these permits are already live on this unit.
+fig_simops = simops_timeline(permit)
+if fig_simops is not None:
+    st.markdown("##### What else is live on this unit")
+    st.plotly_chart(fig_simops, use_container_width=True)
+    st.caption(
+        "A simultaneous-operations conflict is a statement about **time** — two permits being live "
+        "at once. Text hides that. A timeline does not."
+    )
 
 if rc.get("findings"):
     st.error(
@@ -244,6 +260,25 @@ if run:
         {"value": str(len((result.get('hold_points', {}) or {}).get('buried_hold_points', []) or [])),
          "label": "Buried Safeguards Found", "sublabel": "written down, never enforced"},
     ])
+
+    fig_prov = provenance_donut(prov)
+    if fig_prov is not None:
+        pc1, pc2 = st.columns([1, 2])
+        with pc1:
+            st.plotly_chart(fig_prov, use_container_width=True)
+        with pc2:
+            st.markdown("##### Why this donut matters")
+            st.markdown(
+                "Every control the agents claim is *mandated* must quote a real procedure "
+                "**verbatim** — and HOLDPOINT then checks, in code, that the quoted sentence "
+                "actually exists in the document.\n\n"
+                "The amber slice is the part of this review that **could not be traced**. It is "
+                "not hidden and it is not silently dropped. It is shown, downgraded, and handed "
+                "to a human.\n\n"
+                "An AI that invents a safety control has manufactured false assurance inside the "
+                "one system built to prevent it. So we do not ask the model to be honest — "
+                "**we check.**"
+            )
 
     if prov.get("unverified"):
         st.warning(
@@ -362,6 +397,16 @@ if run:
     prec = (result.get("precedent", {}) or {}).get("closest_match", {}) or {}
     if prec:
         render_section("Incident precedent", "Which accident does this permit resemble?")
+
+        # The product's central claim, MEASURED rather than asserted. Not "both involve H2S" —
+        # that is subject matter. This is failure SHAPE.
+        st.plotly_chart(structural_similarity(permit), use_container_width=True)
+        st.caption(
+            "Matched on **structural failure shape**, not subject matter. \"Both involve H2S\" is a "
+            "weak match that retrieves the wrong lesson. \"Both are one broad permit covering "
+            "multiple jobs, with the stop-work instruction present in prose but never enforced\" is "
+            "the match that stops a shift."
+        )
         is_illustrative = (prec.get("verification") or "").lower() == "illustrative"
         box = st.warning if is_illustrative else st.error
         box(f"""**{prec.get('title', '')}** — {prec.get('fatalities', '?')} killed

@@ -15,6 +15,7 @@ from core.styles import (inject_styles, render_page_header, render_section,
                          render_kpi_row, severity_badge)
 from core.ui import bootstrap, render_data_provenance
 from core.backlog import scan_backlog, DEFECTS
+from core.charts import defect_matrix
 from data.permits import PERMITS
 
 inject_styles()
@@ -82,6 +83,9 @@ if scan["by_defect"]:
         margin=dict(l=10, r=10, t=10, b=10),
     )
     st.plotly_chart(fig, use_container_width=True)
+
+    st.plotly_chart(defect_matrix(scan), use_container_width=True)
+    st.caption("Every cell is a structural defect found in a permit that was already authorised.")
 
 # --- Per-permit detail -------------------------------------------------------------------
 render_section("Permit by permit")
