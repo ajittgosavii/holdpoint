@@ -25,6 +25,7 @@ from core.llm import get_openai_primary
 from core.prompts import get_prompt
 from core.domains import get_site
 from core.provenance import verify_assertions, provenance_summary
+from core.vectorstore import add_documents, search_documents, COLLECTION_INCIDENTS
 from data.procedures import procedure_corpus, procedures_as_text
 from data.incidents import incident_corpus, incident_as_text
 
@@ -291,10 +292,50 @@ Return JSON:
     return {"isolation_simops": out, "current_step": "match_precedent"}
 
 
+RETRIEVAL_THRESHOLD = 8  # below this, retrieval adds nothing — pass the whole corpus
+
+
+def _retrieve_incidents(state: PermitState, k: int = 4) -> tuple[list[dict], str]:
+    """Retrieve the incidents most structurally similar to this permit.
+
+    With a corpus this small, retrieval is pointless and the honest thing is to pass everything —
+    a top-k over six documents just risks dropping the one that mattered. The retrieval path exists
+    because a real client corpus is hundreds of investigation reports, and at that size the full
+    corpus cannot go in the prompt.
+
+    The query is built from the SPECIALISTS' FINDINGS, not the permit text, because we are matching
+    on STRUCTURAL failure shape ("over-broad scope, unenforced stop-work instruction") rather than
+    on subject matter ("both involve H2S"). Matching on topic is how you retrieve the wrong lesson.
+    """
+    all_incidents = incident_corpus()
+
+    if len(all_incidents) <= RETRIEVAL_THRESHOLD:
+        return all_incidents, f"full corpus ({len(all_incidents)} incidents — below retrieval threshold)"
+
+    for inc in all_incidents:
+        add_documents(
+            COLLECTION_INCIDENTS,
+            [incident_as_text(inc)],
+            [{"incident_id": inc["incident_id"]}],
+        )
+
+    query = " ".join([
+        json.dumps(state.get("scope", {}), default=str),
+        json.dumps(state.get("hold_points", {}), default=str),
+        json.dumps(state.get("isolation_simops", {}), default=str),
+        state["permit"].get("unit_state", ""),
+    ])
+    hits = search_documents(COLLECTION_INCIDENTS, query, k=k)
+    ids = {doc.metadata.get("incident_id") for doc, _ in hits}
+    retrieved = [i for i in all_incidents if i["incident_id"] in ids]
+    return retrieved or all_incidents, f"retrieved top-{k} of {len(all_incidents)} by structural similarity"
+
+
 def match_precedent(state: PermitState) -> dict:
     """Which historical fatal accident does this permit structurally resemble?"""
     p = state["permit"]
-    corpus = "\n\n".join(incident_as_text(i) for i in incident_corpus())
+    incidents, retrieval_note = _retrieve_incidents(state)
+    corpus = "\n\n".join(incident_as_text(i) for i in incidents)
 
     out = _ask("precedent_matcher", f"""Match this permit against the major-accident corpus.
 
@@ -324,6 +365,8 @@ Return JSON:
   "other_matches": [{{"incident_id": "...", "why": "..."}}],
   "honesty_note": "if the closest match is ILLUSTRATIVE rather than a real investigated accident, say so here plainly"
 }}""")
+    if isinstance(out, dict):
+        out["retrieval"] = retrieval_note
     return {"precedent": out, "current_step": "verdict"}
 
 

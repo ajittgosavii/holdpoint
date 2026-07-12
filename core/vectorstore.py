@@ -10,6 +10,8 @@ import math
 from collections import Counter
 
 # Collection names
+COLLECTION_INCIDENTS = "holdpoint_incidents"   # major-accident precedent corpus
+COLLECTION_PROCEDURES = "holdpoint_procedures"
 COLLECTION_REGULATIONS = "pge_regulations"
 COLLECTION_OBLIGATIONS = "pge_obligations"
 COLLECTION_CASES = "pge_cases"

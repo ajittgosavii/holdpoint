@@ -7,12 +7,23 @@ from core.domains import SITE_PACKS, SITE_LABELS, get_site, DEFAULT_SITE
 
 
 def load_secrets() -> None:
+    """Resolve credentials from, in order: a local .env, Streamlit Cloud secrets, the environment.
+
+    Streamlit does NOT read .env automatically, so without load_dotenv() a local key is silently
+    ignored and the app reports "not configured" while the file sits right there.
+    """
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()  # no-op if there is no .env
+    except ImportError:
+        pass
+
     for key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
         try:
             if key in st.secrets:
                 os.environ[key] = st.secrets[key]
         except Exception:
-            pass  # no secrets.toml locally — use the real environment
+            pass  # no secrets.toml (local dev) — fall back to .env / the real environment
 
 
 def _init_site() -> str:

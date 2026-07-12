@@ -1,9 +1,9 @@
-# Regulatory Compliance AI - Dependencies
+# HOLDPOINT — Adversarial Permit-to-Work Assurance
 # Core
 streamlit>=1.40.0
 python-dotenv>=1.0.0
 
-# LLM & AI
+# Agent orchestration
 langchain>=0.3.0
 langchain-core>=0.3.0
 langchain-community>=0.3.0
@@ -13,10 +13,10 @@ langgraph>=0.2.0
 openai>=1.40.0
 langchain-openai>=0.3.0
 
-# Fallback LLM: Claude (optional — used for high-accuracy regulatory analysis)
+# Automatic failover: Claude Sonnet (set ANTHROPIC_API_KEY to enable)
 anthropic>=0.40.0
 langchain-anthropic>=0.3.0
 
-# Data & Visualization
+# Data & visualisation
 plotly>=5.24.0
 pandas>=2.2.0
