@@ -3,7 +3,7 @@
 > Complete architectural, functional and commercial description of HOLDPOINT, structured for
 > import into **Infosys Topaz Fabric** as an agentic solution asset.
 >
-> Repository: `https://github.com/ajittgosavii/holdpoint` · Blueprint updated 2026-07-12 · commit `23b1d96`
+> Repository: `https://github.com/ajittgosavii/holdpoint` · Blueprint updated 2026-07-12 · commit `7808785`
 >
 > **Status at a glance:** structure, safety layers, connectors, live-data layer, visuals and UI are
 > **verified by test** (15/15 page renders, provenance verifier rejects hallucinated controls,
@@ -41,6 +41,8 @@ capabilities:
   system_of_record_connectors: 4  # Enablon · SAP WCM · IBM Maximo · local — SIMULATED (see §7)
   live_external_apis: 2           # api.sunrise-sunset.org · api.weather.gov — REAL, no key (see §8)
   visuals: 6                      # each renders a computed fact, none decoration (see §9)
+  evaluation_harness: evaluate.py # 5 gates; ground truth asserted (see §14)
+  offline_resilient: true         # cached REAL responses; never fabricates (see §8)
 
 deployment:
   target: Streamlit Cloud
@@ -210,6 +212,8 @@ agents without touching agent code.
 | `data/procedures.py` | Site procedure corpus — the ground truth |
 | `data/permits.py` | Permit packs, incl. the Deer Park pattern |
 | `data/incidents.py` | Major-accident corpus |
+| `data/cache/` | Cached **real** API responses — the demo works offline (§8) |
+| `evaluate.py` | **Evaluation harness** — 5 gates, CI-ready (§14) |
 | `BLUEPRINT.md` | This document |
 
 ---
@@ -419,9 +423,24 @@ it tells the authoriser to establish it.
 
 ### Failure policy — as important as the feature
 
-If an API is unreachable, HOLDPOINT reports conditions **UNAVAILABLE** and tells the authoriser to
-confirm daylight and wind by hand. **It never invents weather.** In a system whose entire argument is
-*"do not fabricate a safeguard"*, fabricating the wind would be self-refuting.
+The reality check is the strongest thing this product does, and it depends on an outbound call.
+**Conference wifi is a coin flip.** So the failure behaviour is designed, not left to chance:
+
+| Situation | What HOLDPOINT does |
+|---|---|
+| **Network available** | Fetches live. Labelled `🌐 LIVE DATA`. |
+| **Network down, cache present** | Serves the **last genuine response it received**, labelled `📦 CACHED REAL DATA` with the timestamp it was actually fetched. The darkness finding still fires. |
+| **Network down, no cache** | Reports **UNAVAILABLE**, and tells the authoriser to confirm daylight and wind by hand. **Invents nothing.** |
+
+**A cached real fetch is still a real fetch** — it is simply no longer live, and the UI says which it
+is. Serving a stale measurement and *calling it stale* is honest. Fabricating a fresh one would be
+self-refuting in a product whose entire argument is *"do not fabricate a safeguard."*
+
+**Verified by simulating a total network blackout**: with cache, the darkness finding still fires on
+real data, correctly labelled; without cache, `wind_direction` comes back `None` — asserted in test,
+so it cannot silently start guessing.
+
+The cache ships warmed for all three sites, so **the demo works offline out of the box.**
 
 > **Known limit:** `api.weather.gov` is **US-only**. All three site packs use US coordinates. A
 > non-US deployment needs a different weather source.
@@ -626,10 +645,13 @@ coherent verdict:
 The reasoning is coherent and cites the correct categories. This closes the gap that previously
 blocked any demo.
 
-### ⚠️ Still NOT verified — be precise about what this means
+### ⚠️ Still NOT MEASURED — be precise about what this means
 
-Running once is not evaluation. **There is no golden set and no regression harness**, so the
-following remain *observed*, not *measured*:
+**Running once is an anecdote.** The evaluation harness now exists (`evaluate.py`, §14) but **has
+not yet been run**, because the API key lives in Streamlit Cloud secrets and is not reachable from
+the build environment.
+
+Until `python evaluate.py --runs 5` comes back green, the following are *observed*, not *measured*:
 
 1. **Does the Hold Point Enforcer reliably find the buried stop-work sentence?** *The entire demo
    hangs on this one moment.* It must quote, verbatim: *"prior to opening the line the crew should
@@ -643,9 +665,9 @@ following remain *observed*, not *measured*:
 4. **Run-to-run variance.** Temperature is 0, but JSON-shaped LLM output is not deterministic in
    practice. No one has measured how often the review differs across runs of the same permit.
 
-> **What this needs is an evaluation harness** — a golden set of permits with known defects, scored
-> for precision and recall on hold-point recovery and verdict calibration. Until that exists, every
-> quality claim is anecdote. See §14 Phase 2.
+> **The harness exists. Run it.** `python evaluate.py --runs 5` measures all four of the above in
+> about three minutes and exits non-zero if any gate fails. Until it comes back green, every quality
+> claim in this document is an anecdote — including the REJECT above. See §14.
 
 ### ⚠️ Also open
 
@@ -669,15 +691,46 @@ waved through.
 
 ---
 
-## 14. Roadmap
+## 14. The Evaluation Harness — holding ourselves to our own standard
+
+`python evaluate.py --runs 5`
+
+Everything else in this project holds other people's systems to one standard: **prove it, don't
+assert it.** This file applies that standard to us. Without it, every claim about agent quality is a
+story about the one time it worked.
+
+### The five gates
+
+| # | Gate | Why it exists |
+|---|------|---------------|
+| 1 | **Hold-point recovery** | The Hold Point Enforcer must recover the safeguard buried in PTW-2026-0417's prose — *verbatim, every single run.* **This is the entire demo.** If it is not 5/5 you need to know before you are on stage, not during. |
+| 2 | **Verdict calibration — in BOTH directions** | REJECT the lethal permit **and AUTHORISE the clean one.** The second half is the half everyone forgets to test, and **a reviewer that flags everything is exactly as useless as one that flags nothing** — it just fails more politely. |
+| 3 | **Citation quality** | If the agents paraphrase instead of quoting, provenance correctly flags them `UNVERIFIED`: the system stays honest, but the review *looks* weak. A prompt problem, not an architecture problem — and this number finds it. |
+| 4 | **Run-to-run variance** | Temperature is 0, but LLM JSON output is not deterministic in practice. A verdict that flips between runs of the same permit makes the demo **a coin toss.** |
+| 5 | **Parse errors** | A silent empty result in a safety system reads as *"nothing wrong here."* |
+
+### The harness cannot move its own goalposts
+
+Ground truth is written down (`EXPECTED`, `BURIED_FRAGMENTS`) and **asserted to actually exist in
+the permit** — a test whose target string was not really in the source could never fail, which would
+make it worse than no test. Exits non-zero, so it is CI-ready.
+
+### Status: BUILT, NOT YET RUN
+
+The key lives in Streamlit Cloud secrets and is unreachable from the build environment. Drop
+`OPENAI_API_KEY=...` into a local `.env` (gitignored) and run it. **This is the single
+highest-value hour of work remaining on this project.**
+
+---
+
+## 15. Roadmap
 
 **Phase 0 — DONE.** The seven agents run end-to-end and return a coherent REJECT on the Deer Park
 permit. Remaining: finish the competitive scan (§3).
 
-**Phase 0.5 — Measure, don't just observe (days).** Build the evaluation harness: a golden set of
-permits with known defects, scored for precision/recall on hold-point recovery and — critically —
-**verdict calibration in both directions** (REJECT the lethal one, AUTHORISE the clean one). Until
-this exists, every quality claim is anecdote.
+**Phase 0.5 — Measure, don't just observe. HARNESS BUILT (§14); NOT YET RUN.**
+`evaluate.py` scores hold-point recovery, verdict calibration in both directions, citation quality
+and run-to-run variance. It needs an API key and three minutes. **Do this before anything else.**
 
 **Phase 1 — Make it real (weeks).** Read permits *out of* SAP WCM / Maximo / Enablon and write
 findings back. Replace TF-IDF retrieval with real embeddings. Persist reviews with an immutable audit
@@ -695,9 +748,30 @@ first** with IOGP, OSHA and EEI contractor-fatality data before selling into it.
 
 ---
 
-## 15. The Three-Minute Demo
+## 16. The Three-Minute Demo
 
 The demo is the product. Structure it so the room feels the problem before it sees the software.
+
+### Before you walk in — the checklist
+
+Run this, and do not skip it:
+
+```bash
+python evaluate.py --runs 5      # must exit 0
+```
+
+| Check | Why | If it fails |
+|---|---|---|
+| **Hold-point recovery 5/5** | The demo is one moment, and this is it | Prompt fix on the Hold Point Enforcer. Do it the night before, not on stage |
+| **Clean permit AUTHORISES** | A judge *will* ask "does it ever say yes?" — you must be able to click it live | If it cannot say yes, it is a rubber stamp in reverse and the pitch collapses |
+| **No verdict flips across runs** | Otherwise the demo is a coin toss | Lower variance or pick a permit that is stable |
+| **Citations >50% verified** | If the agents paraphrase, the review *looks* weak even though the system is being honest | Prompt fix — tell them to copy the sentence, not summarise it |
+
+**Wifi:** the reality check is cached, so it works offline — but it will say `📦 CACHED`. That is
+honest and fine. **Know which one you will see**, so you are not surprised on stage. If you want the
+`🌐 LIVE` badge, hit the page once on good wifi before you present.
+
+---
 
 ### 0:00–0:35 — The sentence (no software on screen)
 
@@ -765,7 +839,7 @@ the thing they were about to ask.
 
 ---
 
-## 16. Topaz Fabric Import Summary
+## 17. Topaz Fabric Import Summary
 
 ```yaml
 asset_type: agentic_solution
