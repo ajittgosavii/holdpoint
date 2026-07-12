@@ -15,6 +15,7 @@ from core.styles import (inject_styles, render_page_header, render_section,
 from core.ui import (bootstrap, require_llm, render_verdict, render_authorisation_gate,
                      citation_badge, render_quote, render_data_provenance)
 from core.backlog import scan_permit
+from core.connectors import get_connector, CONNECTORS, DEFAULT_CONNECTOR
 from data.permits import PERMITS, get_permit
 from agents.permit_review.graph import review_permit, STEP_LABELS
 
@@ -55,8 +56,15 @@ with col_sel:
 with col_run:
     run = st.button("Run Review", type="primary", use_container_width=True)
 
-permit = get_permit(permit_id)
+# Source the permit through whatever system of record is connected. The agents never see the
+# vendor's payload shape — the connector normalises it first. Falls back to local fixtures.
+conn = get_connector(st.session_state.get("connector", DEFAULT_CONNECTOR))
+permit = conn.fetch_canonical(permit_id) or get_permit(permit_id)
 pre = scan_permit(permit)
+
+if conn.key != "local":
+    st.caption(f"Permit fetched from **{conn.product}** and normalised to HOLDPOINT's canonical "
+               f"shape. *(simulated connector — see Connections)*")
 
 if pre["deer_park_shape"]:
     st.error(

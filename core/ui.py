@@ -57,6 +57,7 @@ def bootstrap(show_nav: bool = True) -> dict:
             st.page_link("pages/1_Permit_Review.py", label="Permit Review", icon="🔍")
             st.page_link("pages/2_Backlog_Scan.py", label="Backlog Scan", icon="📊")
             st.page_link("pages/3_Incident_Precedent.py", label="Incident Precedent", icon="📕")
+            st.page_link("pages/4_Connections.py", label="Connections", icon="🔌")
             st.markdown("---")
 
         st.markdown("### Industry")
